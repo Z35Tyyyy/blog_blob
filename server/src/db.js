@@ -1,68 +1,36 @@
-import Database from 'better-sqlite3';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { GridFSBucket, MongoClient } from 'mongodb';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-export const DATA_DIR = path.join(__dirname, '..', 'data');
-export const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
+const uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017';
+const dbName = process.env.MONGODB_DB || 'blog_blob';
 
-fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+const client = new MongoClient(uri);
 
-export const db = new Database(path.join(DATA_DIR, 'app.db'));
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+/** @type {import('mongodb').Db} */
+export let db;
+/** @type {GridFSBucket} bucket for draft image uploads (Render disk is ephemeral) */
+export let uploadsBucket;
 
-db.exec(`
-CREATE TABLE IF NOT EXISTS users (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  username      TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,
-  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
-);
+export async function connect() {
+  await client.connect();
+  db = client.db(dbName);
+  uploadsBucket = new GridFSBucket(db, { bucketName: 'uploads' });
 
-CREATE TABLE IF NOT EXISTS sessions (
-  token_hash TEXT PRIMARY KEY,
-  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  expires_at INTEGER NOT NULL
-);
+  await Promise.all([
+    db.collection('users').createIndex({ username: 1 }, { unique: true }),
+    // TTL index: Mongo deletes expired sessions itself
+    db.collection('sessions').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+    db.collection('posts').createIndex({ slug: 1 }, { unique: true }),
+    db.collection('uploads.files').createIndex({ filename: 1 }),
+  ]);
 
-CREATE TABLE IF NOT EXISTS posts (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  slug         TEXT NOT NULL UNIQUE,
-  title        TEXT NOT NULL DEFAULT '',
-  description  TEXT NOT NULL DEFAULT '',
-  tags         TEXT NOT NULL DEFAULT '[]',
-  cover        TEXT NOT NULL DEFAULT '',
-  markdown     TEXT NOT NULL DEFAULT '',
-  status       TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','published')),
-  date         TEXT NOT NULL DEFAULT '',
-  created_at   TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
-  published_at TEXT
-);
-
-CREATE TABLE IF NOT EXISTS settings (
-  key   TEXT PRIMARY KEY,
-  value TEXT NOT NULL
-);
-`);
-
-// migrations for databases created before a column existed
-const postCols = db.prepare('PRAGMA table_info(posts)').all().map((c) => c.name);
-if (!postCols.includes('published_json')) {
-  // snapshot of the exact posts.json entry committed at publish time —
-  // the public index is built from these, never from live draft rows
-  db.exec('ALTER TABLE posts ADD COLUMN published_json TEXT');
+  return db;
 }
 
-export function getSetting(key, fallback = '') {
-  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+export async function getSetting(key, fallback = '') {
+  const row = await db.collection('settings').findOne({ _id: key });
   return row ? row.value : fallback;
 }
 
-export function setSetting(key, value) {
-  db.prepare(
-    'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
-  ).run(key, value);
+export async function setSetting(key, value) {
+  await db.collection('settings').updateOne({ _id: key }, { $set: { value } }, { upsert: true });
 }

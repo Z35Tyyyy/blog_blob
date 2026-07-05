@@ -9,39 +9,39 @@ const SESSION_DAYS = 30;
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
 
 function userCount() {
-  return db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
+  return db.collection('users').countDocuments();
 }
 
-function sessionFor(req) {
+async function sessionFor(req) {
   const token = req.cookies?.[SESSION_COOKIE];
   if (!token) return null;
-  const row = db
-    .prepare(
-      `SELECT s.user_id, u.username FROM sessions s
-       JOIN users u ON u.id = s.user_id
-       WHERE s.token_hash = ? AND s.expires_at > ?`
-    )
-    .get(sha256(token), Date.now());
-  return row || null;
+  const session = await db.collection('sessions').findOne({
+    _id: sha256(token),
+    expiresAt: { $gt: new Date() },
+  });
+  if (!session) return null;
+  const user = await db.collection('users').findOne({ _id: session.userId });
+  return user ? { user_id: user._id, username: user.username } : null;
 }
 
-export function requireAuth(req, res, next) {
-  const session = sessionFor(req);
-  if (!session) return res.status(401).json({ error: 'not authenticated' });
-  req.user = session;
-  next();
+export async function requireAuth(req, res, next) {
+  try {
+    const session = await sessionFor(req);
+    if (!session) return res.status(401).json({ error: 'not authenticated' });
+    req.user = session;
+    next();
+  } catch (err) {
+    next(err);
+  }
 }
 
-function issueSession(req, res, userId) {
+async function issueSession(req, res, userId) {
   const token = crypto.randomBytes(32).toString('hex');
-  const expires = Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000;
-  db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)').run(
-    sha256(token),
+  await db.collection('sessions').insertOne({
+    _id: sha256(token),
     userId,
-    expires
-  );
-  // prune expired sessions while we're here
-  db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(Date.now());
+    expiresAt: new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000),
+  });
   res.cookie(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
@@ -54,43 +54,63 @@ function issueSession(req, res, userId) {
 
 export const authRouter = Router();
 
-authRouter.get('/status', (req, res) => {
-  const session = sessionFor(req);
-  res.json({
-    setupNeeded: userCount() === 0,
-    authenticated: !!session,
-    username: session?.username ?? null,
-  });
+authRouter.get('/status', async (req, res, next) => {
+  try {
+    const session = await sessionFor(req);
+    res.json({
+      setupNeeded: (await userCount()) === 0,
+      authenticated: !!session,
+      username: session?.username ?? null,
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // First-run: create the single admin account
-authRouter.post('/setup', async (req, res) => {
-  if (userCount() > 0) return res.status(403).json({ error: 'setup already completed' });
-  const { username, password } = req.body ?? {};
-  if (typeof username !== 'string' || !/^[\w.-]{3,32}$/.test(username)) {
-    return res.status(400).json({ error: 'username: 3-32 chars, letters/digits/._-' });
+authRouter.post('/setup', async (req, res, next) => {
+  try {
+    if ((await userCount()) > 0) return res.status(403).json({ error: 'setup already completed' });
+    const { username, password } = req.body ?? {};
+    if (typeof username !== 'string' || !/^[\w.-]{3,32}$/.test(username)) {
+      return res.status(400).json({ error: 'username: 3-32 chars, letters/digits/._-' });
+    }
+    if (typeof password !== 'string' || password.length < 8) {
+      return res.status(400).json({ error: 'password must be at least 8 characters' });
+    }
+    const hash = await bcrypt.hash(password, 10);
+    const info = await db.collection('users').insertOne({
+      username,
+      passwordHash: hash,
+      createdAt: new Date(),
+    });
+    await issueSession(req, res, info.insertedId);
+    res.json({ ok: true, username });
+  } catch (err) {
+    next(err);
   }
-  if (typeof password !== 'string' || password.length < 8) {
-    return res.status(400).json({ error: 'password must be at least 8 characters' });
-  }
-  const hash = await bcrypt.hash(password, 10);
-  const info = db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(username, hash);
-  issueSession(req, res, info.lastInsertRowid);
-  res.json({ ok: true, username });
 });
 
-authRouter.post('/login', async (req, res) => {
-  const { username, password } = req.body ?? {};
-  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(String(username ?? ''));
-  const ok = user && (await bcrypt.compare(String(password ?? ''), user.password_hash));
-  if (!ok) return res.status(401).json({ error: 'invalid credentials' });
-  issueSession(req, res, user.id);
-  res.json({ ok: true, username: user.username });
+authRouter.post('/login', async (req, res, next) => {
+  try {
+    const { username, password } = req.body ?? {};
+    const user = await db.collection('users').findOne({ username: String(username ?? '') });
+    const ok = user && (await bcrypt.compare(String(password ?? ''), user.passwordHash));
+    if (!ok) return res.status(401).json({ error: 'invalid credentials' });
+    await issueSession(req, res, user._id);
+    res.json({ ok: true, username: user.username });
+  } catch (err) {
+    next(err);
+  }
 });
 
-authRouter.post('/logout', (req, res) => {
-  const token = req.cookies?.[SESSION_COOKIE];
-  if (token) db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(sha256(token));
-  res.clearCookie(SESSION_COOKIE, { path: '/' });
-  res.json({ ok: true });
+authRouter.post('/logout', async (req, res, next) => {
+  try {
+    const token = req.cookies?.[SESSION_COOKIE];
+    if (token) await db.collection('sessions').deleteOne({ _id: sha256(token) });
+    res.clearCookie(SESSION_COOKIE, { path: '/' });
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
 });

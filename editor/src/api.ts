@@ -34,12 +34,12 @@ export const api = {
   listPosts: () => request<PostSummary[]>('/api/posts'),
   createPost: (title: string) =>
     request<Post>('/api/posts', { method: 'POST', body: JSON.stringify({ title }) }),
-  getPost: (id: number | string) => request<Post>(`/api/posts/${id}`),
-  updatePost: (id: number, patch: Partial<Post>) =>
+  getPost: (id: string) => request<Post>(`/api/posts/${id}`),
+  updatePost: (id: string, patch: Partial<Post>) =>
     request<Post>(`/api/posts/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
-  deletePost: (id: number) => request<{ ok: boolean }>(`/api/posts/${id}`, { method: 'DELETE' }),
-  publish: (id: number) => request<PublishResult>(`/api/posts/${id}/publish`, { method: 'POST' }),
-  unpublish: (id: number) => request<{ ok: boolean }>(`/api/posts/${id}/unpublish`, { method: 'POST' }),
+  deletePost: (id: string) => request<{ ok: boolean }>(`/api/posts/${id}`, { method: 'DELETE' }),
+  publish: (id: string) => request<PublishResult>(`/api/posts/${id}/publish`, { method: 'POST' }),
+  unpublish: (id: string) => request<{ ok: boolean }>(`/api/posts/${id}/unpublish`, { method: 'POST' }),
 
   // uploads
   upload: (file: File) => {
