@@ -1,5 +1,5 @@
 export interface PostSummary {
-  id: number;
+  id: string;
   slug: string;
   title: string;
   description: string;
