@@ -90,14 +90,17 @@ is involved.
 - Atlas M0 (512 MB) has no automatic backups — `mongodump` occasionally if
   the drafts matter to you. Published content is always safe in this repo.
 
-### CI/CD (GitHub Actions)
+### CI & deploys
 
-- `ci.yml` runs the server smoke suite and the editor build on every PR.
-- `deploy.yml` runs the same checks on pushes to `main`, then triggers a
-  Render deploy and a Vercel deploy. Publish commits (only `content/**`)
-  don't trigger it. It needs four repo secrets — `RENDER_DEPLOY_HOOK_URL`,
-  `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`; until they're set,
-  the deploy steps log a skip message and exit green.
+- `ci.yml` (GitHub Actions) runs the server smoke suite and the editor build
+  on every PR and every push to `main`. No secrets needed.
+- **Deploys are handled by the platforms' own git integrations** — once
+  connected (steps 2 and 3 above), Render and Vercel each redeploy on push
+  to `main` by themselves.
+- Blog publish commits (which only touch `content/**`) don't redeploy
+  anything: Render only rebuilds on changes under its root dir `server/`,
+  and `editor/vercel.json`'s `ignoreCommand` skips Vercel builds when
+  nothing under `editor/` changed.
 
 ### Publish settings
 
