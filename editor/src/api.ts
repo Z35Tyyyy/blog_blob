@@ -54,8 +54,6 @@ export const api = {
 
   // settings
   getSettings: () => request<Settings>('/api/settings'),
-  saveSettings: (patch: Partial<Settings> & { githubToken?: string | null }) =>
+  saveSettings: (patch: Partial<Settings>) =>
     request<{ ok: boolean }>('/api/settings', { method: 'PUT', body: JSON.stringify(patch) }),
-  testSettings: () =>
-    request<{ ok: boolean; fullName: string; canPush: boolean }>('/api/settings/test', { method: 'POST' }),
 };

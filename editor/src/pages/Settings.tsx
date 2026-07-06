@@ -4,7 +4,6 @@ import type { Settings as SettingsType } from '../types';
 
 export default function Settings() {
   const [settings, setSettings] = useState<SettingsType | null>(null);
-  const [token, setToken] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -29,25 +28,9 @@ export default function Settings() {
         repo: settings.repo,
         branch: settings.branch,
         authorName: settings.authorName,
-        ...(token.trim() ? { githubToken: token.trim() } : {}),
       });
-      setToken('');
       setMessage('saved.');
       load();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const test = async () => {
-    setBusy(true);
-    setError('');
-    setMessage('');
-    try {
-      const result = await api.testSettings();
-      setMessage(`token works — push access to ${result.fullName} confirmed.`);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -82,28 +65,23 @@ export default function Settings() {
             />
           </label>
         </div>
-        <label>
-          github token {settings.hasToken && <span className="pill pill-published">saved</span>}
-          <input
-            type="password"
-            value={token}
-            placeholder={settings.hasToken ? '•••••••• (leave blank to keep current)' : 'ghp_… or github_pat_…'}
-            onChange={(e) => setToken(e.target.value)}
-            autoComplete="off"
-          />
-        </label>
         <p className="muted">
-          fine-grained personal access token with <strong>Contents: Read and write</strong> on the
-          content repo only. it is stored in the local database and never committed anywhere.
+          publishing needs no credentials here: posts are snapshotted in the database and the{' '}
+          <a
+            href="https://github.com/Z35Tyyyy/blog_blob/actions/workflows/sync-content.yml"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            content sync workflow ↗
+          </a>{' '}
+          commits them to the repo with GitHub&apos;s own ephemeral token. the repo fields above
+          only shape the image URLs written into published markdown.
         </p>
         {error && <p className="error">{error}</p>}
         {message && <p className="success">{message}</p>}
         <div className="row">
           <button type="submit" disabled={busy}>
             save
-          </button>
-          <button type="button" className="ghost" onClick={test} disabled={busy || !settings.hasToken}>
-            test connection
           </button>
         </div>
       </form>

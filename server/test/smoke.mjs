@@ -48,6 +48,7 @@ const child = spawn(process.execPath, ['src/index.js'], {
     MONGODB_DB: 'blog_blob_test',
     PORT: String(PORT),
     ALLOWED_ORIGINS: ALLOWED_ORIGIN,
+    EXPORT_KEY: 'test-export-key',
     NODE_ENV: 'test',
   },
   stdio: ['ignore', 'pipe', 'inherit'],
@@ -157,13 +158,66 @@ try {
   r = await call('/api/uploads', { method: 'POST', form });
   check('non-image upload → 400', r.status === 400);
 
-  // --- publish guard ---
+  // --- publish (queued, snapshot-based) + export ---
+  r = await call(`/api/posts/${id}`, {
+    method: 'PUT',
+    json: { markdown: `words here\n\n![pic](${uploadUrl})` },
+  });
   r = await call(`/api/posts/${id}/publish`, { method: 'POST' });
-  check('publish without token → clean 400', r.status === 400 && /token/.test(r.body?.error ?? ''));
+  check('publish queues without any token', r.status === 200 && r.body?.queued === true);
+
+  r = await call(`/api/posts/${id}`);
+  check('post flipped to published', r.body?.status === 'published');
+
+  {
+    const anon = await fetch(`${BASE}/api/export/content`);
+    check('export without key → 401', anon.status === 401);
+
+    const wrong = await fetch(`${BASE}/api/export/content`, {
+      headers: { authorization: 'Bearer wrong-key' },
+    });
+    check('export with wrong key → 401', wrong.status === 401);
+
+    const good = await fetch(`${BASE}/api/export/content`, {
+      headers: { authorization: 'Bearer test-export-key' },
+    });
+    const manifest = good.status === 200 ? await good.json() : null;
+    const paths = manifest?.files?.map((f) => f.path) ?? [];
+    const imgFilename = uploadUrl.split('/').pop();
+    check(
+      'export manifest: index + post + image',
+      paths.includes('content/posts.json') &&
+        paths.includes('content/posts/my-test-post.md') &&
+        paths.includes(`content/images/my-test-post/${imgFilename}`)
+    );
+    const md = manifest?.files?.find((f) => f.path === 'content/posts/my-test-post.md')?.content ?? '';
+    check(
+      'published markdown rewrote image to raw URL',
+      md.startsWith('---\n') && md.includes(`raw.githubusercontent.com`) && !md.includes('](/uploads/')
+    );
+    const img = manifest?.files?.find((f) => f.path.startsWith('content/images/'));
+    check('image ships as base64', typeof img?.contentBase64 === 'string' && img.contentBase64.length > 0);
+    const index = JSON.parse(manifest?.files?.find((f) => f.path === 'content/posts.json')?.content ?? '[]');
+    check('index entry snapshotted', index.length === 1 && index[0].slug === 'my-test-post');
+  }
+
+  r = await call(`/api/posts/${id}/unpublish`, { method: 'POST' });
+  check('unpublish queues', r.status === 200 && r.body?.ok === true);
+
+  {
+    const good = await fetch(`${BASE}/api/export/content`, {
+      headers: { authorization: 'Bearer test-export-key' },
+    });
+    const manifest = await good.json();
+    check(
+      'unpublished post leaves the manifest',
+      manifest.files.length === 1 && manifest.files[0].path === 'content/posts.json'
+    );
+  }
 
   // --- settings ---
   r = await call('/api/settings');
-  check('settings defaults', r.body?.owner === 'Z35Tyyyy' && r.body?.hasToken === false);
+  check('settings defaults', r.body?.owner === 'Z35Tyyyy' && r.body?.authorName === 'Kanishk Singh');
 
   // --- delete + logout ---
   r = await call(`/api/posts/${id}`, { method: 'DELETE' });
