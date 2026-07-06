@@ -18,9 +18,11 @@ blog_blob/
 1. You write posts in the **editor** (markdown, live preview, image uploads).
 2. Drafts live in **MongoDB** (draft images in GridFS) — nothing is public
    until you hit **Publish**.
-3. Publishing commits the post's markdown, its images, and a regenerated
-   `content/posts.json` **to this repo** via the GitHub API (using a personal
-   access token you configure in Settings).
+3. Publishing snapshots the post (final markdown + images) **in the
+   database**; the `sync-content` GitHub Actions workflow then commits it to
+   this repo using GitHub's own ephemeral token — **no PAT exists anywhere**.
+   Posts go live on the next sync tick (≤30 min) or instantly via the
+   workflow's *Run workflow* button.
 4. The portfolio's blog page fetches `content/posts.json` and the markdown
    from `raw.githubusercontent.com` and renders it client-side.
 
@@ -102,13 +104,32 @@ is involved.
   and `editor/vercel.json`'s `ignoreCommand` skips Vercel builds when
   nothing under `editor/` changed.
 
+### Content sync (how posts reach the repo)
+
+`sync-content.yml` runs every 30 minutes (and on demand via *Run workflow*).
+It wakes the API, fetches the desired `content/` tree from
+`GET /api/export/content`, reconciles the folder, and commits with the run's
+ephemeral `GITHUB_TOKEN` — publish, republish, unpublish, and image cleanup
+are all just "make the tree match".
+
+One-time setup:
+
+1. Generate a long random string; set it as **`EXPORT_KEY`** in two places:
+   the Render env var and the repo's Actions secret (Settings → Secrets and
+   variables → Actions).
+2. If the Render URL differs from `blog-blob-api.onrender.com`, set the repo
+   *variable* `SYNC_API_URL`.
+
+While the secret is missing or the free-tier API can't be woken, runs skip
+cleanly (green with a notice) — nothing breaks, the next tick retries.
+
 ### Publish settings
 
 In the editor's **Settings** page configure:
 
-- **GitHub token** — fine-grained PAT with *Contents: Read and write* on this
-  repo only. Stored in the local database, never committed.
-- **Repo** — defaults to `Z35Tyyyy/blog_blob`, branch `main`.
+- **Repo** — defaults to `Z35Tyyyy/blog_blob`, branch `main`; used only to
+  shape the `raw.githubusercontent.com` image URLs written into published
+  markdown.
 - **Author name** — shown in post bylines.
 
 ## Content format

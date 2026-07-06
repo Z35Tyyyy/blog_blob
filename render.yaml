@@ -18,3 +18,5 @@ services:
         value: blog_blob
       - key: ALLOWED_ORIGINS
         sync: false # your Vercel URL, e.g. https://blog-blob.vercel.app
+      - key: EXPORT_KEY
+        sync: false # same value as the GitHub repo secret EXPORT_KEY (content sync)

@@ -1,0 +1,58 @@
+# Publishes CMS content into content/ using GitHub's own ephemeral token —
+# no PAT exists anywhere in the system. The CMS snapshots published posts in
+# its database; this workflow fetches the desired content/ tree from
+# GET /api/export/content and commits the difference.
+#
+# Publish latency: next scheduled tick (≤30 min) or the Run workflow button.
+#
+# Setup (one-time):
+#   - repo secret EXPORT_KEY: same value as the Render env var EXPORT_KEY
+#   - optional repo variable SYNC_API_URL if the Render URL ever differs
+#
+# While EXPORT_KEY is unset or the free-tier API is unreachable, runs exit
+# green with a skip notice — safe to merge before the infra exists.
+name: sync-content
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-content
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: fetch manifest and reconcile content/
+        id: sync
+        env:
+          API_URL: ${{ vars.SYNC_API_URL || 'https://blog-blob-api.onrender.com' }}
+          EXPORT_KEY: ${{ secrets.EXPORT_KEY }}
+        run: |
+          if [ -z "$EXPORT_KEY" ]; then
+            echo "EXPORT_KEY secret not set — skipping sync"
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          node .github/scripts/sync-content.mjs
+
+      - name: commit and push if changed
+        if: steps.sync.outputs.skipped != 'true'
+        run: |
+          git add -A content/
+          if git diff --cached --quiet; then
+            echo "content/ already in sync"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "sync: publish content from CMS"
+            git push
+          fi

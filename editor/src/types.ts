@@ -38,12 +38,10 @@ export interface Settings {
   repo: string;
   branch: string;
   authorName: string;
-  hasToken: boolean;
 }
 
 export interface PublishResult {
   ok: boolean;
-  commit: string;
+  queued: boolean;
   slug: string;
-  rawUrl: string;
 }

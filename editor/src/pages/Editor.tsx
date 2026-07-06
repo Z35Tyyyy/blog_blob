@@ -447,10 +447,14 @@ export default function Editor() {
 
       {publishResult && (
         <div className="publish-banner">
-          published as <code>{publishResult.slug}</code> (commit{' '}
-          <code>{publishResult.commit.slice(0, 7)}</code>) —{' '}
-          <a href={publishResult.rawUrl} target="_blank" rel="noopener noreferrer">
-            raw markdown ↗
+          <code>{publishResult.slug}</code> queued — goes live on the next content sync
+          (≤30 min), or{' '}
+          <a
+            href="https://github.com/Z35Tyyyy/blog_blob/actions/workflows/sync-content.yml"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            run the sync now ↗
           </a>
           <button className="ghost" onClick={() => setPublishResult(null)}>
             ✕

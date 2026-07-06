@@ -36,7 +36,7 @@ flowchart LR
     browser -->|"HTTPS"| editor
     editor -->|"/api/* and /uploads/*<br/>rewritten by vercel.json<br/>(same-origin → cookies work)"| api
     api <--> mongo
-    api -->|"publish: one atomic commit<br/>via GitHub Git Data API<br/>(PAT stored in settings)"| content
+    api -->|"publish: snapshot in DB; the sync-content<br/>workflow commits via GitHub's<br/>ephemeral token (no PAT anywhere)"| content
     content -->|"raw.githubusercontent.com"| portfolio
 ```
 
@@ -140,34 +140,35 @@ editor content; it still autosaves like any other edit.
 
 ## Publish path: draft → public blog
 
+Publishing is a pure database operation; **no GitHub credential exists
+anywhere in the system**. The `sync-content` GitHub Actions workflow
+(cron every 30 min + a manual Run button) commits published content using
+GitHub's own ephemeral `GITHUB_TOKEN`.
+
 ```mermaid
 sequenceDiagram
     participant E as Editor
     participant A as API
     participant M as MongoDB
-    participant G as GitHub API
+    participant W as sync-content workflow
     participant P as Portfolio (reader)
 
     E->>A: POST /api/posts/:id/publish
-    A->>M: load post + settings (PAT, owner/repo/branch)
     A->>A: rewrite /uploads/... URLs →<br/>raw.githubusercontent.com/.../content/images/slug/...
-    A->>M: read each referenced image from GridFS
-    A->>M: freeze index entry into publishedJson,<br/>mark status=published
-    A->>A: rebuild posts.json from ALL publishedJson snapshots
-    A->>G: ONE commit via Git Data API:<br/>posts/slug.md + images + posts.json<br/>(+ delete now-unreferenced images)
-    alt commit fails
-        A->>M: roll post back to pre-request state
-        A-->>E: 502 with the GitHub error
-    else
-        A-->>E: { commit, rawUrl }
-    end
-    P->>G: (later) fetch posts.json + slug.md from raw.githubusercontent.com
+    A->>M: snapshot: publishedJson (index entry),<br/>publishedMarkdown (frontmatter+body),<br/>publishedImages (GridFS refs)
+    A-->>E: { queued: true }
+    W->>A: (≤30 min later) GET /api/export/content<br/>Bearer EXPORT_KEY
+    A->>M: read all published snapshots + images from GridFS
+    A-->>W: manifest: the desired content/ tree
+    W->>W: reconcile content/ to match, commit + push<br/>with the run's ephemeral GITHUB_TOKEN
+    P->>W: (later) fetch posts.json + slug.md from raw.githubusercontent.com
 ```
 
-The commit is atomic — blob upload → tree → commit → update ref — so the repo
-never ends up with a post but no index entry, or images without their post.
-Unpublish is the mirror image: delete `posts/<slug>.md` + `images/<slug>/` and
-rebuild the index.
+The manifest is the *entire* desired `content/` tree, so publish, republish,
+unpublish, and image pruning are all the same operation: make the tree equal
+the manifest. Unpublishing just drops the snapshots — the next sync removes
+the files. If the free-tier API is asleep and can't be woken, the run skips
+cleanly and the next tick retries; a failed export commits nothing.
 
 ## Auth
 

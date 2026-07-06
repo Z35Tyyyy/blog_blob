@@ -9,6 +9,7 @@ import { postsRouter } from './posts.js';
 import { uploadsRouter, serveUpload } from './uploads.js';
 import { publishRouter } from './publish.js';
 import { settingsRouter } from './settings.js';
+import { exportRouter } from './export.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -47,6 +48,8 @@ app.use('/api/posts', requireAuth, postsRouter);
 app.use('/api/posts', requireAuth, publishRouter); // /:id/publish, /:id/unpublish
 app.use('/api/uploads', requireAuth, uploadsRouter);
 app.use('/api/settings', requireAuth, settingsRouter);
+// key-authed (EXPORT_KEY), consumed by the sync-content workflow — not session-authed
+app.use('/api/export', exportRouter);
 
 // Draft images (behind auth — drafts are private until published), from GridFS
 app.get('/uploads/:filename', requireAuth, serveUpload);
