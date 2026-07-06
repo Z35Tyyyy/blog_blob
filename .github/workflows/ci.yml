@@ -4,6 +4,10 @@ on:
   pull_request:
     paths-ignore:
       - 'content/**' # published blog output — nothing to test
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'content/**' # blog publish commits — nothing to test
   workflow_dispatch:
 
 jobs:
