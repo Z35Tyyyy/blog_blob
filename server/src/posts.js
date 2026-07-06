@@ -30,6 +30,47 @@ export function serialize(doc, { includeMarkdown = true } = {}) {
   return out;
 }
 
+// ---- revision checkpoints ----
+// A snapshot of the *previous* markdown is taken when a save changes the body,
+// at most once per interval — so autosave's 1.2s debounce yields checkpoint
+// history ("the post as of ~5 minutes ago"), not a revision per keystroke.
+const REVISION_INTERVAL_MS = 5 * 60 * 1000;
+const REVISIONS_KEPT = 20;
+
+async function snapshotRevision(doc) {
+  if (!doc.markdown.trim()) return; // an empty body is not worth a checkpoint
+  const revisions = db.collection('revisions');
+  const latest = await revisions.find({ postId: doc._id }).sort({ createdAt: -1 }).limit(1).next();
+  if (latest && Date.now() - latest.createdAt.getTime() < REVISION_INTERVAL_MS) return;
+  if (latest && latest.markdown === doc.markdown) return;
+  await revisions.insertOne({
+    postId: doc._id,
+    title: doc.title,
+    markdown: doc.markdown,
+    words: doc.markdown.split(/\s+/).filter(Boolean).length,
+    createdAt: new Date(),
+  });
+  const excess = await revisions
+    .find({ postId: doc._id }, { projection: { _id: 1 } })
+    .sort({ createdAt: -1 })
+    .skip(REVISIONS_KEPT)
+    .toArray();
+  if (excess.length) await revisions.deleteMany({ _id: { $in: excess.map((e) => e._id) } });
+}
+
+function serializeRevision(doc, { includeMarkdown = true } = {}) {
+  const out = {
+    id: doc._id.toString(),
+    words: doc.words,
+    created_at: doc.createdAt.toISOString(),
+  };
+  if (includeMarkdown) {
+    out.title = doc.title;
+    out.markdown = doc.markdown;
+  }
+  return out;
+}
+
 async function uniqueSlug(base, excludeId = null) {
   let slug = base;
   let n = 2;
@@ -127,8 +168,40 @@ postsRouter.put('/:id', async (req, res, next) => {
       patch.slug = await uniqueSlug(wanted, doc._id);
     }
 
+    if (b.markdown !== undefined && patch.markdown !== doc.markdown) {
+      await snapshotRevision(doc);
+    }
+
     await db.collection('posts').updateOne({ _id }, { $set: patch });
     res.json(serialize(await db.collection('posts').findOne({ _id })));
+  } catch (err) {
+    next(err);
+  }
+});
+
+postsRouter.get('/:id/revisions', async (req, res, next) => {
+  try {
+    const _id = oid(req.params.id);
+    const doc = _id && (await db.collection('posts').findOne({ _id }, { projection: { _id: 1 } }));
+    if (!doc) return res.status(404).json({ error: 'post not found' });
+    const revs = await db
+      .collection('revisions')
+      .find({ postId: _id }, { projection: { markdown: 0 } })
+      .sort({ createdAt: -1 })
+      .toArray();
+    res.json(revs.map((r) => serializeRevision(r, { includeMarkdown: false })));
+  } catch (err) {
+    next(err);
+  }
+});
+
+postsRouter.get('/:id/revisions/:revId', async (req, res, next) => {
+  try {
+    const _id = oid(req.params.id);
+    const revId = oid(req.params.revId);
+    const rev = _id && revId && (await db.collection('revisions').findOne({ _id: revId, postId: _id }));
+    if (!rev) return res.status(404).json({ error: 'revision not found' });
+    res.json(serializeRevision(rev));
   } catch (err) {
     next(err);
   }
@@ -143,6 +216,7 @@ postsRouter.delete('/:id', async (req, res, next) => {
       return res.status(400).json({ error: 'unpublish this post before deleting it' });
     }
     await db.collection('posts').deleteOne({ _id });
+    await db.collection('revisions').deleteMany({ postId: _id });
     res.json({ ok: true });
   } catch (err) {
     next(err);

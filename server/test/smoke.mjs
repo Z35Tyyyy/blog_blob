@@ -114,6 +114,25 @@ try {
   r = await call('/api/posts/not-an-oid');
   check('invalid oid → 404', r.status === 404);
 
+  // --- revision checkpoints ---
+  r = await call(`/api/posts/${id}/revisions`);
+  check('no checkpoints before a body change', Array.isArray(r.body) && r.body.length === 0);
+
+  await call(`/api/posts/${id}`, { method: 'PUT', json: { markdown: 'second version of the body' } });
+  r = await call(`/api/posts/${id}/revisions`);
+  check('body change checkpoints the previous version', r.body?.length === 1 && r.body[0].words === 3);
+  const revId = r.body?.[0]?.id;
+
+  r = await call(`/api/posts/${id}/revisions/${revId}`);
+  check('checkpoint holds the pre-edit markdown', r.body?.markdown === '## hi\n\n![x](/uploads/nope.png)');
+
+  await call(`/api/posts/${id}`, { method: 'PUT', json: { markdown: 'third version' } });
+  r = await call(`/api/posts/${id}/revisions`);
+  check('rapid saves collapse into one checkpoint', r.body?.length === 1);
+
+  r = await call(`/api/posts/${id}/revisions/${'0'.repeat(24)}`);
+  check('unknown revision → 404', r.status === 404);
+
   // --- uploads (GridFS) ---
   const png = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
@@ -149,6 +168,8 @@ try {
   // --- delete + logout ---
   r = await call(`/api/posts/${id}`, { method: 'DELETE' });
   check('delete draft', r.body?.ok === true);
+  r = await call(`/api/posts/${id}/revisions`);
+  check('revisions of a deleted post → 404', r.status === 404);
   r = await call(`/api/posts/${allowedId}`, { method: 'DELETE' });
   check('delete second draft', r.body?.ok === true);
 

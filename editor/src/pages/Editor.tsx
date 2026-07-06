@@ -8,7 +8,7 @@ import { oneDark } from '@codemirror/theme-one-dark';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { api } from '../api';
-import type { Post, PublishResult } from '../types';
+import type { Post, PublishResult, Revision, RevisionSummary } from '../types';
 
 type Mode = 'edit' | 'split' | 'preview';
 type SaveState = 'saved' | 'unsaved' | 'saving' | 'error';
@@ -23,9 +23,14 @@ export default function Editor() {
   const [lastSaved, setLastSaved] = useState('');
   const [busy, setBusy] = useState(false);
   const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
+  const [zen, setZen] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [revisions, setRevisions] = useState<RevisionSummary[] | null>(null);
+  const [revPreview, setRevPreview] = useState<Revision | null>(null);
 
   const cmRef = useRef<ReactCodeMirrorRef>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const coverRef = useRef<HTMLInputElement>(null);
   const postRef = useRef<Post | null>(null);
   postRef.current = post;
   // generation counter: incremented on every edit so a save that resolves
@@ -123,6 +128,16 @@ export default function Editor() {
     [save]
   );
 
+  // esc leaves zen mode
+  useEffect(() => {
+    if (!zen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setZen(false);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [zen]);
+
   // ---- markdown insertion helpers ----
   const wrapSelection = useCallback((before: string, after: string, placeholder: string) => {
     const view = cmRef.current?.view;
@@ -171,6 +186,48 @@ export default function Editor() {
     },
     [insertBlock]
   );
+
+  const uploadCover = async (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    try {
+      const { url } = await api.upload(file);
+      patch({ cover: url });
+    } catch (e) {
+      setError(`upload failed: ${(e as Error).message}`);
+    }
+  };
+
+  // ---- revision checkpoints ----
+  const toggleHistory = async () => {
+    if (showHistory) {
+      setShowHistory(false);
+      setRevPreview(null);
+      return;
+    }
+    setShowHistory(true);
+    setRevisions(null);
+    try {
+      setRevisions(await api.listRevisions(id!));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  const viewRevision = async (revId: string) => {
+    try {
+      setRevPreview(await api.getRevision(id!, revId));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  const restoreRevision = () => {
+    if (!revPreview) return;
+    if (!window.confirm('replace the current draft content with this checkpoint?')) return;
+    patch({ markdown: revPreview.markdown });
+    setRevPreview(null);
+    setShowHistory(false);
+  };
 
   // paste/drop images straight into the editor
   const pasteExtension = useMemo(
@@ -278,6 +335,7 @@ export default function Editor() {
   const toolbar: Array<[string, string, () => void]> = [
     ['B', 'bold (ctrl+b)', () => wrapSelection('**', '**', 'bold')],
     ['I', 'italic (ctrl+i)', () => wrapSelection('*', '*', 'italic')],
+    ['~~', 'strikethrough', () => wrapSelection('~~', '~~', 'struck')],
     ['<>', 'inline code', () => wrapSelection('`', '`', 'code')],
     ['H2', 'heading 2', () => insertBlock('## Heading')],
     ['H3', 'heading 3', () => insertBlock('### Heading')],
@@ -286,13 +344,14 @@ export default function Editor() {
     ['❝', 'blockquote', () => insertBlock('> quote')],
     ['••', 'bullet list', () => insertBlock('- one\n- two\n- three')],
     ['1.', 'numbered list', () => insertBlock('1. one\n2. two\n3. three')],
+    ['☑', 'task list', () => insertBlock('- [ ] task')],
     ['```', 'code block', () => insertBlock('```\ncode\n```')],
     ['▦', 'table', () => insertBlock('| col | col |\n| --- | --- |\n| a | b |')],
     ['—', 'divider', () => insertBlock('---')],
   ];
 
   return (
-    <main className="editor-page">
+    <main className={`editor-page${zen ? ' zen' : ''}`}>
       <div className="editor-meta">
         <div className="meta-row">
           <Link to="/" className="muted back-link">← posts</Link>
@@ -362,6 +421,25 @@ export default function Editor() {
               onChange={(e) => patch({ description: e.target.value })}
             />
           </label>
+          <label>
+            cover image
+            <div className="cover-field">
+              <input
+                value={post.cover}
+                placeholder="https://… or upload →"
+                onChange={(e) => patch({ cover: e.target.value })}
+              />
+              <button className="ghost" onClick={() => coverRef.current?.click()} title="upload cover image">
+                ↑
+              </button>
+              {post.cover && (
+                <button className="ghost danger" onClick={() => patch({ cover: '' })} title="remove cover">
+                  ✕
+                </button>
+              )}
+            </div>
+            {post.cover && <img className="cover-thumb" src={post.cover} alt="cover preview" />}
+          </label>
         </div>
       </div>
 
@@ -387,6 +465,20 @@ export default function Editor() {
           </button>
         ))}
         <span className="spacer" />
+        <button
+          className={`ghost tool ${showHistory ? 'active' : ''}`}
+          onClick={toggleHistory}
+          title="revision checkpoints"
+        >
+          ↺ history
+        </button>
+        <button
+          className={`ghost tool ${zen ? 'active' : ''}`}
+          onClick={() => setZen((z) => !z)}
+          title="distraction-free writing (esc exits)"
+        >
+          zen
+        </button>
         {(['edit', 'split', 'preview'] as Mode[]).map((m) => (
           <button
             key={m}
@@ -397,6 +489,49 @@ export default function Editor() {
           </button>
         ))}
       </div>
+
+      {showHistory && (
+        <div className="history-panel">
+          <div className="history-head">
+            <span>checkpoints</span>
+            <span className="muted">
+              the previous version is snapshotted when you save — at most one per 5 minutes, last 20 kept
+            </span>
+          </div>
+          {!revisions && <p className="muted">loading…</p>}
+          {revisions && revisions.length === 0 && (
+            <p className="muted">no checkpoints yet — they appear as you keep writing.</p>
+          )}
+          {revisions && revisions.length > 0 && (
+            <ul className="history-list">
+              {revisions.map((r) => (
+                <li key={r.id}>
+                  <button
+                    className={`ghost tool ${revPreview?.id === r.id ? 'active' : ''}`}
+                    onClick={() => viewRevision(r.id)}
+                  >
+                    {new Date(r.created_at).toLocaleString()} · {r.words} words
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {revPreview && (
+            <div className="history-preview">
+              <div className="history-preview-head">
+                <span className="muted">
+                  {new Date(revPreview.created_at).toLocaleString()} · {revPreview.words} words
+                </span>
+                <button onClick={restoreRevision}>restore this version</button>
+                <button className="ghost" onClick={() => setRevPreview(null)}>
+                  close
+                </button>
+              </div>
+              <pre className="history-preview-body">{revPreview.markdown}</pre>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className={`editor-panes mode-${mode}`}>
         {mode !== 'preview' && (
@@ -433,6 +568,16 @@ export default function Editor() {
         style={{ display: 'none' }}
         onChange={(e) => {
           if (e.target.files) void uploadFiles(e.target.files);
+          e.target.value = '';
+        }}
+      />
+      <input
+        ref={coverRef}
+        type="file"
+        accept="image/png,image/jpeg,image/gif,image/webp"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          if (e.target.files?.[0]) void uploadCover(e.target.files[0]);
           e.target.value = '';
         }}
       />
