@@ -58,6 +58,8 @@ export default function App() {
     refresh();
   };
 
+  const demo = auth.demo;
+
   return (
     <div className={`shell${location.pathname.startsWith('/edit/') ? ' shell-wide' : ''}`}>
       <nav className="topbar">
@@ -73,10 +75,16 @@ export default function App() {
           </button>
         </div>
       </nav>
+      {demo && (
+        <div className="demo-bar">
+          read-only demo — explore freely, but saving and publishing are disabled.{' '}
+          <button className="linklike" onClick={logout}>log in</button> as admin to make changes.
+        </div>
+      )}
       <Routes>
-        <Route path="/" element={<Posts />} />
-        <Route path="/edit/:id" element={<Editor />} />
-        <Route path="/settings" element={<Settings />} />
+        <Route path="/" element={<Posts demo={demo} />} />
+        <Route path="/edit/:id" element={<Editor demo={demo} />} />
+        <Route path="/settings" element={<Settings demo={demo} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>

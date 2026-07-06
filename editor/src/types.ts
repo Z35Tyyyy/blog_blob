@@ -31,6 +31,7 @@ export interface AuthStatus {
   setupNeeded: boolean;
   authenticated: boolean;
   username: string | null;
+  demo: boolean;
 }
 
 export interface Settings {

@@ -13,7 +13,7 @@ import type { Post, PublishResult, Revision, RevisionSummary } from '../types';
 type Mode = 'edit' | 'split' | 'preview';
 type SaveState = 'saved' | 'unsaved' | 'saving' | 'error';
 
-export default function Editor() {
+export default function Editor({ demo }: { demo: boolean }) {
   const { id } = useParams();
 
   const [post, setPost] = useState<Post | null>(null);
@@ -58,6 +58,9 @@ export default function Editor() {
   }, [id]);
 
   const patch = (fields: Partial<Post>) => {
+    // read-only demo: inputs and the editor render, but nothing mutates or
+    // autosaves — the choke point keeps every field controlled-and-frozen
+    if (demo) return;
     dirtyRef.current += 1;
     setPost((p) => (p ? { ...p, ...fields } : p));
     setSaveState('unsaved');
@@ -67,7 +70,7 @@ export default function Editor() {
 
   const save = useCallback(async () => {
     const p = postRef.current;
-    if (!p) return null;
+    if (!p || demo) return null;
     const generation = dirtyRef.current;
     setSaveState('saving');
     try {
@@ -363,16 +366,18 @@ export default function Editor() {
             {saveState === 'saving' && 'saving…'}
             {saveState === 'error' && <span className="error">save failed</span>}
           </span>
-          <div className="meta-actions">
-            {post.status === 'published' && (
-              <button className="ghost" onClick={doUnpublish} disabled={busy}>
-                unpublish
+          {!demo && (
+            <div className="meta-actions">
+              {post.status === 'published' && (
+                <button className="ghost" onClick={doUnpublish} disabled={busy}>
+                  unpublish
+                </button>
+              )}
+              <button onClick={doPublish} disabled={busy}>
+                {busy ? '…' : post.status === 'published' ? 'republish' : 'publish'}
               </button>
-            )}
-            <button onClick={doPublish} disabled={busy}>
-              {busy ? '…' : post.status === 'published' ? 'republish' : 'publish'}
-            </button>
-          </div>
+            </div>
+          )}
         </div>
 
         <input
@@ -429,10 +434,10 @@ export default function Editor() {
                 placeholder="https://… or upload →"
                 onChange={(e) => patch({ cover: e.target.value })}
               />
-              <button className="ghost" onClick={() => coverRef.current?.click()} title="upload cover image">
+              <button className="ghost" onClick={() => coverRef.current?.click()} title="upload cover image" disabled={demo}>
                 ↑
               </button>
-              {post.cover && (
+              {post.cover && !demo && (
                 <button className="ghost danger" onClick={() => patch({ cover: '' })} title="remove cover">
                   ✕
                 </button>
@@ -464,7 +469,7 @@ export default function Editor() {
 
       <div className="editor-toolbar">
         {toolbar.map(([label, title, action]) => (
-          <button key={title} className="ghost tool" title={title} onClick={action}>
+          <button key={title} className="ghost tool" title={title} onClick={action} disabled={demo}>
             {label}
           </button>
         ))}
@@ -526,7 +531,7 @@ export default function Editor() {
                 <span className="muted">
                   {new Date(revPreview.created_at).toLocaleString()} · {revPreview.words} words
                 </span>
-                <button onClick={restoreRevision}>restore this version</button>
+                <button onClick={restoreRevision} disabled={demo}>restore this version</button>
                 <button className="ghost" onClick={() => setRevPreview(null)}>
                   close
                 </button>
@@ -543,6 +548,7 @@ export default function Editor() {
             <CodeMirror
               ref={cmRef}
               value={post.markdown}
+              editable={!demo}
               onChange={(value) => patch({ markdown: value })}
               extensions={extensions}
               theme={isDark ? oneDark : undefined}

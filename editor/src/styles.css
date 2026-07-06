@@ -225,6 +225,24 @@ label {
   font-size: 0.85rem;
 }
 
+.demo-bar {
+  background: var(--accent);
+  color: var(--bg);
+  text-align: center;
+  padding: 0.5rem 1ch;
+  font-size: 0.85rem;
+}
+
+.demo-bar .linklike {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 /* ---- posts list ---- */
 .page {
   max-width: 80ch;

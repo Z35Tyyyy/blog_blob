@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import { api } from '../api';
 import type { Settings as SettingsType } from '../types';
 
-export default function Settings() {
+export default function Settings({ demo }: { demo: boolean }) {
   const [settings, setSettings] = useState<SettingsType | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -15,7 +15,10 @@ export default function Settings() {
 
   if (!settings) return <main className="page muted">{error || 'loading…'}</main>;
 
-  const patch = (fields: Partial<SettingsType>) => setSettings({ ...settings, ...fields });
+  const patch = (fields: Partial<SettingsType>) => {
+    if (demo) return; // read-only demo — inputs render but never change
+    setSettings({ ...settings, ...fields });
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -80,7 +83,7 @@ export default function Settings() {
         {error && <p className="error">{error}</p>}
         {message && <p className="success">{message}</p>}
         <div className="row">
-          <button type="submit" disabled={busy}>
+          <button type="submit" disabled={busy || demo}>
             save
           </button>
         </div>

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import type { PostSummary } from '../types';
 
-export default function Posts() {
+export default function Posts({ demo }: { demo: boolean }) {
   const [posts, setPosts] = useState<PostSummary[] | null>(null);
   const [error, setError] = useState('');
   const [title, setTitle] = useState('');
@@ -52,15 +52,17 @@ export default function Posts() {
 
   return (
     <main className="page">
-      <div className="new-post">
-        <input
-          placeholder="new post title…"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && create()}
-        />
-        <button onClick={create} disabled={busy}>{busy ? '…' : '+ new post'}</button>
-      </div>
+      {!demo && (
+        <div className="new-post">
+          <input
+            placeholder="new post title…"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && create()}
+          />
+          <button onClick={create} disabled={busy}>{busy ? '…' : '+ new post'}</button>
+        </div>
+      )}
 
       {error && <p className="error">{error}</p>}
       {!posts && !error && <p className="muted">loading…</p>}
@@ -105,7 +107,7 @@ export default function Posts() {
               <div className="post-row-side">
                 <span className={`pill pill-${p.status}`}>{p.status}</span>
                 <span className="muted post-row-date">{p.date}</span>
-                {p.status === 'draft' && (
+                {p.status === 'draft' && !demo && (
                   <button
                     className="ghost danger"
                     onClick={(e) => {
