@@ -34,7 +34,16 @@ export default function Editor() {
   const saveStateRef = useRef<SaveState>('saved');
   saveStateRef.current = saveState;
 
-  const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+  const [isDark, setIsDark] = useState(
+    () => document.documentElement.getAttribute('data-theme') !== 'light'
+  );
+  useEffect(() => {
+    const obs = new MutationObserver(() =>
+      setIsDark(document.documentElement.getAttribute('data-theme') !== 'light')
+    );
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => obs.disconnect();
+  }, []);
 
   useEffect(() => {
     api
@@ -316,7 +325,12 @@ export default function Editor() {
 
         <div className="meta-grid">
           <label>
-            slug
+            <span>
+              slug
+              {!SLUG_RE.test(post.slug) && (
+                <span className="error"> · not saved — use a-z, 0-9, hyphens</span>
+              )}
+            </span>
             <input
               value={post.slug}
               disabled={post.status === 'published'}
@@ -325,7 +339,10 @@ export default function Editor() {
             />
           </label>
           <label>
-            date
+            <span>
+              date
+              {!post.date && <span className="error"> · empty — keeps last saved date</span>}
+            </span>
             <input type="date" value={post.date} onChange={(e) => patch({ date: e.target.value })} />
           </label>
           <label>

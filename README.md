@@ -9,7 +9,7 @@ blog_blob/
 │   ├── posts.json  ← index of published posts
 │   ├── posts/      ← one markdown file per post (with frontmatter)
 │   └── images/     ← post images, one folder per slug
-├── server/         ← Express + SQLite backend (auth, drafts, uploads, publish)
+├── server/         ← Express + MongoDB backend (auth, drafts, uploads, publish)
 └── editor/         ← React + Vite editor UI (markdown, live preview, publish)
 ```
 
@@ -62,7 +62,9 @@ First run: the editor asks you to create the admin account, then log in.
 2. Set the two prompted env vars:
    - `MONGODB_URI` — the Atlas string from step 1
    - `ALLOWED_ORIGINS` — your Vercel URL (add it after step 3, e.g.
-     `https://blog-blob.vercel.app`)
+     `https://<your-project>.vercel.app`)
+
+   (`MONGODB_DB` is preset to `blog_blob` in `render.yaml`.)
 3. Deploy. Health check: `https://<service>.onrender.com/api/status`.
 
 ### 3. Vercel — the editor frontend
