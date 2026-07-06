@@ -24,6 +24,9 @@ blog_blob/
 4. The portfolio's blog page fetches `content/posts.json` and the markdown
    from `raw.githubusercontent.com` and renders it client-side.
 
+Diagrams of all of this — components, data model, write/publish flows,
+deployment — live in [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## Running locally
 
 Requirements: Node 20+, a MongoDB connection string (Atlas free tier works;
@@ -86,6 +89,15 @@ is involved.
   pinging `/api/status` every 10 minutes keeps it warm.
 - Atlas M0 (512 MB) has no automatic backups — `mongodump` occasionally if
   the drafts matter to you. Published content is always safe in this repo.
+
+### CI/CD (GitHub Actions)
+
+- `ci.yml` runs the server smoke suite and the editor build on every PR.
+- `deploy.yml` runs the same checks on pushes to `main`, then triggers a
+  Render deploy and a Vercel deploy. Publish commits (only `content/**`)
+  don't trigger it. It needs four repo secrets — `RENDER_DEPLOY_HOOK_URL`,
+  `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`; until they're set,
+  the deploy steps log a skip message and exit green.
 
 ### Publish settings
 

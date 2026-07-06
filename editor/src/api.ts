@@ -1,4 +1,4 @@
-import type { AuthStatus, Post, PostSummary, PublishResult, Settings } from './types';
+import type { AuthStatus, Post, PostSummary, PublishResult, Revision, RevisionSummary, Settings } from './types';
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -40,6 +40,10 @@ export const api = {
   deletePost: (id: string) => request<{ ok: boolean }>(`/api/posts/${id}`, { method: 'DELETE' }),
   publish: (id: string) => request<PublishResult>(`/api/posts/${id}/publish`, { method: 'POST' }),
   unpublish: (id: string) => request<{ ok: boolean }>(`/api/posts/${id}/unpublish`, { method: 'POST' }),
+
+  // revisions
+  listRevisions: (id: string) => request<RevisionSummary[]>(`/api/posts/${id}/revisions`),
+  getRevision: (id: string, revId: string) => request<Revision>(`/api/posts/${id}/revisions/${revId}`),
 
   // uploads
   upload: (file: File) => {
