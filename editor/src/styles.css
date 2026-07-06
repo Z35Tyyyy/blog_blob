@@ -214,6 +214,17 @@ label {
   font-size: 1.3rem;
 }
 
+.demo-note {
+  margin-top: 1.4rem;
+  padding-top: 1.4rem;
+  border-top: 1px dashed var(--divider);
+}
+
+.demo-note p {
+  margin: 0 0 0.8rem;
+  font-size: 0.85rem;
+}
+
 /* ---- posts list ---- */
 .page {
   max-width: 80ch;

@@ -1,6 +1,9 @@
 import { FormEvent, useState } from 'react';
 import { api } from '../api';
 
+const DEMO_USER = 'demo';
+const DEMO_PASS = 'browse-only';
+
 export default function Login({ setupNeeded, onDone }: { setupNeeded: boolean; onDone: () => void }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -19,6 +22,19 @@ export default function Login({ setupNeeded, onDone }: { setupNeeded: boolean; o
     try {
       if (setupNeeded) await api.setup(username, password);
       else await api.login(username, password);
+      onDone();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const enterAsDemo = async () => {
+    setError('');
+    setBusy(true);
+    try {
+      await api.login(DEMO_USER, DEMO_PASS);
       onDone();
     } catch (err) {
       setError((err as Error).message);
@@ -76,6 +92,18 @@ export default function Login({ setupNeeded, onDone }: { setupNeeded: boolean; o
           {busy ? '…' : setupNeeded ? 'create account' : 'log in'}
         </button>
       </form>
+
+      {!setupNeeded && (
+        <div className="demo-note">
+          <p className="muted">
+            just exploring? enter as <code>{DEMO_USER}</code> / <code>{DEMO_PASS}</code> — browse
+            everything, but publishing is disabled.
+          </p>
+          <button type="button" className="ghost" onClick={enterAsDemo} disabled={busy}>
+            enter as demo
+          </button>
+        </div>
+      )}
     </div>
   );
 }
