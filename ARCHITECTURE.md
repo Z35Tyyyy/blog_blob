@@ -178,34 +178,36 @@ TTL index (Mongo deletes expired sessions itself) and set as an
 sits behind that cookie. Mutating requests are additionally origin-checked
 (same host, localhost, or an entry in `ALLOWED_ORIGINS`).
 
-## Deployment & CI/CD
+## Deployment & CI
+
+Deploys ride the platforms' own git integrations (Vercel hobby + Render free
+tier) — GitHub Actions only runs checks, and needs no secrets.
 
 ```mermaid
 flowchart TD
-    dev["push / merge PR to main"] --> gha{"GitHub Actions"}
-    gha -->|"ci.yml (PRs)"| checks["server smoke tests (28 checks,<br/>in-memory MongoDB) + editor tsc/vite build"]
-    gha -->|"deploy.yml (push to main,<br/>ignores content/**)"| dchecks["same checks"]
-    dchecks --> rhook["curl RENDER_DEPLOY_HOOK_URL<br/>→ Render rebuilds server/"]
-    dchecks --> vdep["vercel pull/build/deploy<br/>→ Vercel redeploys editor/"]
-    publish["CMS publish commit<br/>(touches only content/)"] -.->|"paths-ignore: no deploy"| gha
+    dev["push / merge PR to main"] --> gha["GitHub Actions ci.yml<br/>server smoke tests (28 checks,<br/>in-memory MongoDB) + editor tsc/vite build"]
+    dev --> render["Render git integration<br/>rootDir server/ → rebuilds API<br/>only when server/ changes"]
+    dev --> vercel["Vercel git integration<br/>ignoreCommand skips builds<br/>unless editor/ changed"]
+    publish["CMS publish commit<br/>(touches only content/)"] -.->|"nothing rebuilds —<br/>content is served from GitHub"| dev
 ```
 
 | Where | What | Credentials it needs |
 |---|---|---|
-| GitHub Actions secrets | drives `deploy.yml` | `RENDER_DEPLOY_HOOK_URL`, `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` |
 | Render service env | runtime config for `server/` | `MONGODB_URI`, `MONGODB_DB`, `ALLOWED_ORIGINS` (see `render.yaml`) |
 | CMS Settings page | publishing | GitHub PAT with write access to this repo (stored in Mongo `settings`) |
+| GitHub Actions | `ci.yml` checks only | none |
 
-Deploy steps skip themselves with a log line while their secrets are unset,
-so the workflow is safe to have merged before the wiring is done. Publish
-commits from the CMS only touch `content/**` and deliberately do **not**
-trigger a deploy — the content is served straight from GitHub.
+Publish commits from the CMS only touch `content/**` and deliberately do
+**not** trigger a rebuild anywhere: `ci.yml` ignores that path, Render only
+watches `server/` (its root directory), and `editor/vercel.json`'s
+`ignoreCommand` tells Vercel to skip builds when nothing under `editor/`
+changed. The content itself is served straight from GitHub.
 
 ## Repo map
 
 ```
 blog_blob/
-├── .github/workflows/   ci.yml (PR checks) · deploy.yml (main → Render + Vercel)
+├── .github/workflows/   ci.yml — checks on PRs and pushes to main
 ├── content/             ← the published blog (what readers fetch)
 │   ├── posts.json         index, regenerated on every (un)publish
 │   ├── posts/<slug>.md    frontmatter + body
