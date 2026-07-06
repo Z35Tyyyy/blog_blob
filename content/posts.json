@@ -10,16 +10,5 @@
     ],
     "cover": "",
     "readingTime": 10
-  },
-  {
-    "slug": "hello-world",
-    "title": "hello, world (the blog is alive)",
-    "date": "2026-07-04",
-    "description": "In which I finally build the blog I've been threatening to write for a year.",
-    "tags": [
-      "meta"
-    ],
-    "cover": "",
-    "readingTime": 2
   }
 ]
