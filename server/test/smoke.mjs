@@ -1,7 +1,7 @@
 // End-to-end API smoke test against an in-memory MongoDB.
 // Boots the real server process — no mocks. Run with: npm test
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 
 const PORT = 4111;
@@ -230,6 +230,45 @@ try {
   await call('/api/logout', { method: 'POST' });
   r = await call('/api/posts');
   check('after logout → 401', r.status === 401);
+
+  // --- demo account (read-only) ---
+  {
+    const made = spawnSync(
+      process.execPath,
+      ['scripts/create-demo-user.mjs', 'demo', 'browse-only'],
+      { env: { ...process.env, MONGODB_URI: mongod.getUri(), MONGODB_DB: 'blog_blob_test' } }
+    );
+    check('demo user script succeeds', made.status === 0, String(made.stderr));
+  }
+
+  cookie = '';
+  r = await call('/api/login', { method: 'POST', json: { username: 'demo', password: 'browse-only' } });
+  check('demo login works', r.status === 200 && !!cookie);
+
+  r = await call('/api/status');
+  check('status flags demo session', r.body?.demo === true && r.body?.username === 'demo');
+
+  r = await call('/api/posts');
+  check('demo can browse posts', r.status === 200 && Array.isArray(r.body));
+
+  r = await call('/api/posts', { method: 'POST', json: { title: 'demo vandalism' } });
+  check('demo cannot create posts', r.status === 403 && /read-only/.test(r.body?.error ?? ''));
+
+  r = await call(`/api/posts/${'0'.repeat(24)}/publish`, { method: 'POST' });
+  check('demo cannot publish', r.status === 403);
+
+  r = await call('/api/settings', { method: 'PUT', json: { authorName: 'hax' } });
+  check('demo cannot change settings', r.status === 403);
+
+  {
+    const form2 = new FormData();
+    form2.append('image', new Blob([png], { type: 'image/png' }), 'demo.png');
+    r = await call('/api/uploads', { method: 'POST', form: form2 });
+    check('demo cannot upload', r.status === 403);
+  }
+
+  r = await call('/api/settings');
+  check('demo can read settings', r.status === 200 && r.body?.owner === 'Z35Tyyyy');
 } catch (err) {
   failed++;
   console.error('fatal:', err.message);

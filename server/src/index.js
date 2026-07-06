@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import { connect } from './db.js';
-import { authRouter, requireAuth } from './auth.js';
+import { authRouter, requireAuth, demoReadOnly } from './auth.js';
 import { postsRouter } from './posts.js';
 import { uploadsRouter, serveUpload } from './uploads.js';
 import { publishRouter } from './publish.js';
@@ -44,10 +44,10 @@ app.use((req, res, next) => {
 
 // --- API ---
 app.use('/api', authRouter);
-app.use('/api/posts', requireAuth, postsRouter);
-app.use('/api/posts', requireAuth, publishRouter); // /:id/publish, /:id/unpublish
-app.use('/api/uploads', requireAuth, uploadsRouter);
-app.use('/api/settings', requireAuth, settingsRouter);
+app.use('/api/posts', requireAuth, demoReadOnly, postsRouter);
+app.use('/api/posts', requireAuth, demoReadOnly, publishRouter); // /:id/publish, /:id/unpublish
+app.use('/api/uploads', requireAuth, demoReadOnly, uploadsRouter);
+app.use('/api/settings', requireAuth, demoReadOnly, settingsRouter);
 // key-authed (EXPORT_KEY), consumed by the sync-content workflow — not session-authed
 app.use('/api/export', exportRouter);
 

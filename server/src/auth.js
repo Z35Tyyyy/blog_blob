@@ -21,7 +21,7 @@ async function sessionFor(req) {
   });
   if (!session) return null;
   const user = await db.collection('users').findOne({ _id: session.userId });
-  return user ? { user_id: user._id, username: user.username } : null;
+  return user ? { user_id: user._id, username: user.username, role: user.role ?? 'admin' } : null;
 }
 
 export async function requireAuth(req, res, next) {
@@ -33,6 +33,15 @@ export async function requireAuth(req, res, next) {
   } catch (err) {
     next(err);
   }
+}
+
+/** Demo accounts browse everything but change nothing (created via
+    scripts/create-demo-user.mjs — there is no signup endpoint). */
+export function demoReadOnly(req, res, next) {
+  if (req.user?.role === 'demo' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    return res.status(403).json({ error: 'demo account is read-only' });
+  }
+  next();
 }
 
 async function issueSession(req, res, userId) {
@@ -61,6 +70,7 @@ authRouter.get('/status', async (req, res, next) => {
       setupNeeded: (await userCount()) === 0,
       authenticated: !!session,
       username: session?.username ?? null,
+      demo: session?.role === 'demo',
     });
   } catch (err) {
     next(err);

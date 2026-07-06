@@ -49,6 +49,21 @@ npm run dev            # http://localhost:5173 (proxies /api to :4000)
 
 First run: the editor asks you to create the admin account, then log in.
 
+### Demo account (read-only)
+
+To let visitors explore the editor without being able to change anything:
+
+```bash
+cd server
+node --env-file=.env scripts/create-demo-user.mjs   # creates demo / browse-only
+```
+
+Demo sessions can browse posts, open the editor, view revision history and
+settings — but every mutating request (save, create, upload, publish,
+unpublish, settings) is rejected server-side with `403 demo account is
+read-only`. Pass custom credentials as arguments:
+`node --env-file=.env scripts/create-demo-user.mjs <username> <password>`.
+
 ## Deployment (MongoDB Atlas + Render + Vercel)
 
 ### 1. MongoDB Atlas — the database
