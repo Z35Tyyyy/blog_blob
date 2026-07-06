@@ -1,5 +1,17 @@
 [
   {
+    "slug": "cloudsek-hiring-ctf-writeup",
+    "title": "CloudSEK Hiring CTF Writeup",
+    "date": "2026-07-07",
+    "description": "Step-by-step solutions, approaches, and insights into each challenge.",
+    "tags": [
+      "ctf",
+      "writeup"
+    ],
+    "cover": "",
+    "readingTime": 10
+  },
+  {
     "slug": "hello-world",
     "title": "hello, world (the blog is alive)",
     "date": "2026-07-04",
