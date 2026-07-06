@@ -20,6 +20,7 @@ export async function connect() {
     // TTL index: Mongo deletes expired sessions itself
     db.collection('sessions').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
     db.collection('posts').createIndex({ slug: 1 }, { unique: true }),
+    db.collection('revisions').createIndex({ postId: 1, createdAt: -1 }),
     db.collection('uploads.files').createIndex({ filename: 1 }),
   ]);
 

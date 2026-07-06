@@ -59,7 +59,7 @@ export default function App() {
   };
 
   return (
-    <div className="shell">
+    <div className={`shell${location.pathname.startsWith('/edit/') ? ' shell-wide' : ''}`}>
       <nav className="topbar">
         <Link to="/" className="brand">
           <span className="asterisk">*</span> blog_blob

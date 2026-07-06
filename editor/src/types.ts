@@ -16,6 +16,17 @@ export interface Post extends PostSummary {
   markdown: string;
 }
 
+export interface RevisionSummary {
+  id: string;
+  words: number;
+  created_at: string;
+}
+
+export interface Revision extends RevisionSummary {
+  title: string;
+  markdown: string;
+}
+
 export interface AuthStatus {
   setupNeeded: boolean;
   authenticated: boolean;
