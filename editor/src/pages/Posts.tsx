@@ -8,6 +8,8 @@ export default function Posts() {
   const [error, setError] = useState('');
   const [title, setTitle] = useState('');
   const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<'all' | 'draft' | 'published'>('all');
   const navigate = useNavigate();
 
   const load = () => {
@@ -38,6 +40,16 @@ export default function Posts() {
     }
   };
 
+  const q = query.trim().toLowerCase();
+  const shown = (posts ?? []).filter(
+    (p) =>
+      (filter === 'all' || p.status === filter) &&
+      (!q ||
+        p.title.toLowerCase().includes(q) ||
+        p.slug.includes(q) ||
+        p.tags.some((t) => t.includes(q)))
+  );
+
   return (
     <main className="page">
       <div className="new-post">
@@ -57,12 +69,38 @@ export default function Posts() {
       )}
 
       {posts && posts.length > 0 && (
+        <div className="filter-row">
+          <input
+            placeholder="search title, slug, tag…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          {(['all', 'draft', 'published'] as const).map((f) => (
+            <button
+              key={f}
+              className={`ghost tool ${filter === f ? 'active' : ''}`}
+              onClick={() => setFilter(f)}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {posts && posts.length > 0 && shown.length === 0 && (
+        <p className="muted">nothing matches that search.</p>
+      )}
+
+      {shown.length > 0 && (
         <ul className="post-list">
-          {posts.map((p) => (
+          {shown.map((p) => (
             <li key={p.id} className="post-row" onClick={() => navigate(`/edit/${p.id}`)}>
               <div className="post-row-main">
                 <span className="post-row-title">{p.title || 'Untitled'}</span>
                 <span className="post-row-slug muted">/{p.slug}</span>
+                {p.tags.length > 0 && (
+                  <span className="post-row-tags muted">{p.tags.map((t) => `#${t}`).join(' ')}</span>
+                )}
               </div>
               <div className="post-row-side">
                 <span className={`pill pill-${p.status}`}>{p.status}</span>

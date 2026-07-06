@@ -1,0 +1,84 @@
+# Deploys on every push to main, except publish commits (they only touch
+# content/, which is served from raw.githubusercontent.com — no redeploy
+# needed). Each deploy step skips itself cleanly while its secrets are unset,
+# so this workflow is safe to merge before the credentials are wired.
+#
+# Secrets to configure (repo → Settings → Secrets and variables → Actions):
+#   RENDER_DEPLOY_HOOK_URL  Render service → Settings → Deploy Hook
+#   VERCEL_TOKEN            vercel.com → Account Settings → Tokens
+#   VERCEL_ORG_ID           editor/.vercel/project.json after `vercel link`
+#   VERCEL_PROJECT_ID       (same file), or the project's Settings page
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'content/**'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            editor/package-lock.json
+      - run: npm ci
+        working-directory: server
+      - run: npm test
+        working-directory: server
+      - run: npm ci
+        working-directory: editor
+      - run: npm run build
+        working-directory: editor
+
+  deploy-api:
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: trigger Render deploy
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "RENDER_DEPLOY_HOOK_URL not set — skipping API deploy"
+            exit 0
+          fi
+          curl -fsS -X POST "$HOOK" -o /dev/null
+          echo "Render deploy triggered"
+
+  deploy-editor:
+    needs: checks
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: deploy to Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        # runs at the repo root — the pulled project settings carry the
+        # project's root directory (editor/), so the CLI builds from there
+        run: |
+          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+            echo "Vercel secrets not set — skipping editor deploy"
+            exit 0
+          fi
+          npm install -g vercel@latest
+          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+          vercel build --prod --token="$VERCEL_TOKEN"
+          vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
