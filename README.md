@@ -51,7 +51,8 @@ First run: the editor asks you to create the admin account, then log in.
 
 ### Demo account (read-only)
 
-To let visitors explore the editor without being able to change anything:
+To let visitors explore the editor without being able to change anything
+(run this **after** first-run setup has created your admin account):
 
 ```bash
 cd server
@@ -63,6 +64,19 @@ settings — but every mutating request (save, create, upload, publish,
 unpublish, settings) is rejected server-side with `403 demo account is
 read-only`. Pass custom credentials as arguments:
 `node --env-file=.env scripts/create-demo-user.mjs <username> <password>`.
+
+**If the account you log in with shows the read-only demo banner** (frozen
+editor, no publish button), its user document carries the demo role. Inspect
+and fix with:
+
+```bash
+cd server
+node --env-file=.env scripts/promote-admin.mjs            # list users + roles
+node --env-file=.env scripts/promote-admin.mjs <username> # make that user admin
+```
+
+The editor also self-heals: when no admin account exists at all (only demo
+users), the first-run setup screen reopens so you can create a fresh admin.
 
 ## Deployment (MongoDB Atlas + Render + Vercel)
 

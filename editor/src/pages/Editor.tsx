@@ -13,6 +13,8 @@ import type { Post, PublishResult, Revision, RevisionSummary } from '../types';
 type Mode = 'edit' | 'split' | 'preview';
 type SaveState = 'saved' | 'unsaved' | 'saving' | 'error';
 
+const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
 export default function Editor({ demo }: { demo: boolean }) {
   const { id } = useParams();
 
@@ -66,8 +68,6 @@ export default function Editor({ demo }: { demo: boolean }) {
     setSaveState('unsaved');
   };
 
-  const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-
   const save = useCallback(async () => {
     const p = postRef.current;
     if (!p || demo) return null;
@@ -100,8 +100,7 @@ export default function Editor({ demo }: { demo: boolean }) {
       setError((e as Error).message);
       return null;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [demo]);
 
   // autosave (debounced)
   useEffect(() => {
