@@ -1,6 +1,6 @@
 ---
 title: "CloudSEK Hiring CTF Writeup"
-date: 2026-07-07
+date: 2025-11-25
 description: "Step-by-step solutions, approaches, and insights into each challenge."
 tags: ["ctf", "writeup"]
 ---
