@@ -138,6 +138,24 @@ try {
   r = await call(`/api/posts/${id}/revisions/${'0'.repeat(24)}`);
   check('unknown revision → 404', r.status === 404);
 
+  // --- WAF-safe transport: base64-wrapped JSON write bodies ---
+  {
+    const nasty =
+      "payload zoo: ' OR 1=1 -- <script>alert(1)</script> ../../etc/passwd {{7*7}} $(cat /etc/shadow)";
+    const wrapped = Buffer.from(JSON.stringify({ markdown: nasty }), 'utf8').toString('base64');
+    r = await call(`/api/posts/${id}`, { method: 'PUT', json: { b64: wrapped } });
+    check('b64-wrapped update accepted', r.status === 200, `got ${r.status}`);
+    r = await call(`/api/posts/${id}`);
+    check('b64 body roundtrips exactly', r.body?.markdown === nasty);
+
+    r = await call(`/api/posts/${id}`, { method: 'PUT', json: { b64: '%%%not-base64%%%' } });
+    check('unparseable b64 body → 400', r.status === 400);
+
+    const nonObject = Buffer.from('"just a string"', 'utf8').toString('base64');
+    r = await call(`/api/posts/${id}`, { method: 'PUT', json: { b64: nonObject } });
+    check('non-object b64 body → 400', r.status === 400);
+  }
+
   // --- uploads (GridFS) ---
   const png = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
