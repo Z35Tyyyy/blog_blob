@@ -28,6 +28,13 @@ const client = new MongoClient(process.env.MONGODB_URI);
 await client.connect();
 const db = client.db(process.env.MONGODB_DB || 'blog_blob');
 
+const admins = await db.collection('users').countDocuments({ role: { $ne: 'demo' } });
+if (admins === 0) {
+  console.error('no admin account exists yet — open the editor and complete first-run setup first');
+  console.error('(a database with only read-only demo users cannot be administered)');
+  process.exit(1);
+}
+
 const existing = await db.collection('users').findOne({ username });
 if (existing && (existing.role ?? 'admin') !== 'demo') {
   console.error(`user "${username}" exists and is not a demo account — refusing to downgrade it`);

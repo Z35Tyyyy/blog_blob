@@ -8,8 +8,11 @@ const SESSION_DAYS = 30;
 
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
 
-function userCount() {
-  return db.collection('users').countDocuments();
+/** Users who can actually administer the CMS (absent role = admin). Demo
+    accounts must not count towards first-run setup: a database whose only
+    users are read-only would otherwise be unrecoverable from the app. */
+function adminCount() {
+  return db.collection('users').countDocuments({ role: { $ne: 'demo' } });
 }
 
 async function sessionFor(req) {
@@ -67,7 +70,7 @@ authRouter.get('/status', async (req, res, next) => {
   try {
     const session = await sessionFor(req);
     res.json({
-      setupNeeded: (await userCount()) === 0,
+      setupNeeded: (await adminCount()) === 0,
       authenticated: !!session,
       username: session?.username ?? null,
       demo: session?.role === 'demo',
@@ -80,7 +83,7 @@ authRouter.get('/status', async (req, res, next) => {
 // First-run: create the single admin account
 authRouter.post('/setup', async (req, res, next) => {
   try {
-    if ((await userCount()) > 0) return res.status(403).json({ error: 'setup already completed' });
+    if ((await adminCount()) > 0) return res.status(403).json({ error: 'setup already completed' });
     const { username, password } = req.body ?? {};
     if (typeof username !== 'string' || !/^[\w.-]{3,32}$/.test(username)) {
       return res.status(400).json({ error: 'username: 3-32 chars, letters/digits/._-' });
@@ -89,11 +92,20 @@ authRouter.post('/setup', async (req, res, next) => {
       return res.status(400).json({ error: 'password must be at least 8 characters' });
     }
     const hash = await bcrypt.hash(password, 10);
-    const info = await db.collection('users').insertOne({
-      username,
-      passwordHash: hash,
-      createdAt: new Date(),
-    });
+    let info;
+    try {
+      info = await db.collection('users').insertOne({
+        username,
+        passwordHash: hash,
+        createdAt: new Date(),
+      });
+    } catch (err) {
+      // a demo account may already hold this username
+      if (err?.code === 11000 || /duplicate/i.test(String(err?.message))) {
+        return res.status(400).json({ error: 'username already taken' });
+      }
+      throw err;
+    }
     await issueSession(req, res, info.insertedId);
     res.json({ ok: true, username });
   } catch (err) {

@@ -77,7 +77,8 @@ export default function App() {
       </nav>
       {demo && (
         <div className="demo-bar">
-          read-only demo — explore freely, but saving and publishing are disabled.{' '}
+          read-only demo — you’re browsing as “{auth.username}”; saving and publishing are
+          disabled.{' '}
           <button className="linklike" onClick={logout}>log in</button> as admin to make changes.
         </div>
       )}

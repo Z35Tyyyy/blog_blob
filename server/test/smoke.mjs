@@ -2,6 +2,7 @@
 // Boots the real server process — no mocks. Run with: npm test
 
 import { spawn, spawnSync } from 'node:child_process';
+import { MongoClient } from 'mongodb';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 
 const PORT = 4111;
@@ -40,11 +41,14 @@ async function call(path, { method = 'GET', json, form, origin, auth = true } = 
   return { status: res.status, body, res };
 }
 
-const mongod = await MongoMemoryServer.create();
+// SMOKE_MONGODB_URI points the suite at an existing MongoDB-compatible
+// server, for environments where the memory-server binary can't download.
+const mongod = process.env.SMOKE_MONGODB_URI ? null : await MongoMemoryServer.create();
+const uri = process.env.SMOKE_MONGODB_URI || mongod.getUri();
 const child = spawn(process.execPath, ['src/index.js'], {
   env: {
     ...process.env,
-    MONGODB_URI: mongod.getUri(),
+    MONGODB_URI: uri,
     MONGODB_DB: 'blog_blob_test',
     PORT: String(PORT),
     ALLOWED_ORIGINS: ALLOWED_ORIGIN,
@@ -236,7 +240,7 @@ try {
     const made = spawnSync(
       process.execPath,
       ['scripts/create-demo-user.mjs', 'demo', 'browse-only'],
-      { env: { ...process.env, MONGODB_URI: mongod.getUri(), MONGODB_DB: 'blog_blob_test' } }
+      { env: { ...process.env, MONGODB_URI: uri, MONGODB_DB: 'blog_blob_test' } }
     );
     check('demo user script succeeds', made.status === 0, String(made.stderr));
   }
@@ -269,12 +273,57 @@ try {
 
   r = await call('/api/settings');
   check('demo can read settings', r.status === 200 && r.body?.owner === 'Z35Tyyyy');
+
+  // --- role recovery: a mis-roled admin must not brick the CMS ---
+  {
+    const direct = new MongoClient(uri);
+    await direct.connect();
+    const users = direct.db('blog_blob_test').collection('users');
+
+    await users.updateOne({ username: 'admin' }, { $set: { role: 'demo' } });
+    r = await call('/api/status', { auth: false });
+    check('demo-only database → setup opens again', r.body?.setupNeeded === true);
+
+    r = await call('/api/setup', {
+      method: 'POST',
+      json: { username: 'demo', password: 'password123' },
+      auth: false,
+    });
+    check('setup with a taken username → 400', r.status === 400);
+
+    cookie = '';
+    r = await call('/api/setup', { method: 'POST', json: { username: 'admin2', password: 'longenough2' } });
+    check('setup creates a fresh admin for recovery', r.status === 200 && !!cookie);
+
+    r = await call('/api/posts', { method: 'POST', json: { title: 'Recovery Post' } });
+    check('recovered admin can write again', r.status === 201);
+    await call(`/api/posts/${r.body?.id}`, { method: 'DELETE' });
+
+    const promoted = spawnSync(
+      process.execPath,
+      ['scripts/promote-admin.mjs', 'admin'],
+      { env: { ...process.env, MONGODB_URI: uri, MONGODB_DB: 'blog_blob_test' } }
+    );
+    check('promote-admin restores the original admin', promoted.status === 0, String(promoted.stderr));
+    const restored = await users.findOne({ username: 'admin' });
+    check('restored admin has no demo role', (restored?.role ?? 'admin') !== 'demo');
+    await direct.close();
+  }
+
+  {
+    const made = spawnSync(
+      process.execPath,
+      ['scripts/create-demo-user.mjs'],
+      { env: { ...process.env, MONGODB_URI: uri, MONGODB_DB: 'blog_blob_test_fresh' } }
+    );
+    check('demo script refuses to run before first-run setup', made.status === 1);
+  }
 } catch (err) {
   failed++;
   console.error('fatal:', err.message);
 } finally {
   child.kill();
-  await mongod.stop();
+  await mongod?.stop();
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
