@@ -50,7 +50,13 @@ export default function App() {
   if (!auth) return <div className="center-card muted">loading…</div>;
 
   if (auth.setupNeeded || !auth.authenticated) {
-    return <Login setupNeeded={auth.setupNeeded} onDone={refresh} />;
+    return (
+      <Login
+        setupNeeded={auth.setupNeeded}
+        setupTokenRequired={auth.setupTokenRequired}
+        onDone={refresh}
+      />
+    );
   }
 
   const logout = async () => {

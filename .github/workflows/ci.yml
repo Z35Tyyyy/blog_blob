@@ -10,6 +10,10 @@ on:
       - 'content/**' # blog publish commits — nothing to test
   workflow_dispatch:
 
+# least privilege: these jobs only read the checkout, never write back
+permissions:
+  contents: read
+
 jobs:
   server-tests:
     runs-on: ubuntu-latest

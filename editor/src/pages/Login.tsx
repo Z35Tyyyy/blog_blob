@@ -4,10 +4,19 @@ import { api } from '../api';
 const DEMO_USER = 'demo';
 const DEMO_PASS = 'browse-only';
 
-export default function Login({ setupNeeded, onDone }: { setupNeeded: boolean; onDone: () => void }) {
+export default function Login({
+  setupNeeded,
+  setupTokenRequired,
+  onDone,
+}: {
+  setupNeeded: boolean;
+  setupTokenRequired: boolean;
+  onDone: () => void;
+}) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [setupToken, setSetupToken] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -20,7 +29,7 @@ export default function Login({ setupNeeded, onDone }: { setupNeeded: boolean; o
     }
     setBusy(true);
     try {
-      if (setupNeeded) await api.setup(username, password);
+      if (setupNeeded) await api.setup(username, password, setupTokenRequired ? setupToken : undefined);
       else await api.login(username, password);
       onDone();
     } catch (err) {
@@ -83,6 +92,18 @@ export default function Login({ setupNeeded, onDone }: { setupNeeded: boolean; o
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               autoComplete="new-password"
+              required
+            />
+          </label>
+        )}
+        {setupNeeded && setupTokenRequired && (
+          <label>
+            setup token
+            <input
+              type="password"
+              value={setupToken}
+              onChange={(e) => setSetupToken(e.target.value)}
+              autoComplete="off"
               required
             />
           </label>

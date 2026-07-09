@@ -5,13 +5,14 @@ export const settingsRouter = Router();
 
 settingsRouter.get('/', async (req, res, next) => {
   try {
-    const [owner, repo, branch, authorName] = await Promise.all([
+    const [owner, repo, branch, authorName, siteUrl] = await Promise.all([
       getSetting('github_owner', 'Z35Tyyyy'),
       getSetting('github_repo', 'blog_blob'),
       getSetting('github_branch', 'main'),
       getSetting('author_name', 'Kanishk Singh'),
+      getSetting('site_url', ''),
     ]);
-    res.json({ owner, repo, branch, authorName });
+    res.json({ owner, repo, branch, authorName, siteUrl });
   } catch (err) {
     next(err);
   }
@@ -25,6 +26,7 @@ settingsRouter.put('/', async (req, res, next) => {
       repo: 'github_repo',
       branch: 'github_branch',
       authorName: 'author_name',
+      siteUrl: 'site_url',
     };
     for (const [field, key] of Object.entries(simple)) {
       if (typeof b[field] === 'string' && b[field].trim()) {

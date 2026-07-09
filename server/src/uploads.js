@@ -20,6 +20,23 @@ const upload = multer({
   fileFilter: (req, file, cb) => cb(null, !!ALLOWED[file.mimetype]),
 });
 
+// Trust the bytes, not the client-declared Content-Type: an attacker can label
+// anything `image/png`. Sniff the magic number and only accept our four formats.
+function sniffImageMime(buf) {
+  if (buf.length >= 8 && buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])))
+    return 'image/png';
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  if (buf.length >= 6 && ['GIF87a', 'GIF89a'].includes(buf.subarray(0, 6).toString('latin1')))
+    return 'image/gif';
+  if (
+    buf.length >= 12 &&
+    buf.subarray(0, 4).toString('latin1') === 'RIFF' &&
+    buf.subarray(8, 12).toString('latin1') === 'WEBP'
+  )
+    return 'image/webp';
+  return null;
+}
+
 function makeFilename(originalname, mimetype) {
   const base =
     path
@@ -41,9 +58,17 @@ uploadsRouter.post('/', (req, res, next) => {
         .status(400)
         .json({ error: 'no valid image supplied — png, jpeg, gif, webp only (field name: image)' });
     }
-    const filename = makeFilename(req.file.originalname, req.file.mimetype);
+    // Authoritative check: the actual bytes must be one of the allowed images,
+    // regardless of the client-declared MIME the fileFilter already gated on.
+    const mimetype = sniffImageMime(req.file.buffer);
+    if (!mimetype || !ALLOWED[mimetype]) {
+      return res
+        .status(400)
+        .json({ error: 'file contents are not a supported image — png, jpeg, gif, webp only' });
+    }
+    const filename = makeFilename(req.file.originalname, mimetype);
     const stream = uploadsBucket.openUploadStream(filename, {
-      metadata: { contentType: req.file.mimetype },
+      metadata: { contentType: mimetype },
     });
     stream.on('error', next);
     stream.on('finish', () => res.status(201).json({ url: `/uploads/${filename}` }));
@@ -80,6 +105,7 @@ export function serveUpload(req, res) {
     .then(([file]) => {
       if (!file) return res.status(404).json({ error: 'not found' });
       res.set('Content-Type', file.metadata?.contentType ?? 'application/octet-stream');
+      res.set('X-Content-Type-Options', 'nosniff');
       res.set('Cache-Control', 'private, max-age=86400');
       uploadsBucket
         .openDownloadStreamByName(filename)

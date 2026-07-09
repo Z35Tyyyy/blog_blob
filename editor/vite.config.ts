@@ -12,5 +12,8 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    // Skip the inline modulepreload polyfill so the built index.html carries no
+    // inline <script>, letting the CSP keep script-src 'self' (see vercel.json).
+    modulePreload: { polyfill: false },
   },
 });

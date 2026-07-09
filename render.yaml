@@ -20,3 +20,5 @@ services:
         sync: false # your Vercel URL, e.g. https://blog-blob.vercel.app
       - key: EXPORT_KEY
         sync: false # same value as the GitHub repo secret EXPORT_KEY (content sync)
+      - key: SETUP_TOKEN
+        sync: false # required to complete first-run admin setup (blocks land-grab)

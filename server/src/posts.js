@@ -25,6 +25,7 @@ export function serialize(doc, { includeMarkdown = true } = {}) {
     created_at: doc.createdAt?.toISOString() ?? null,
     updated_at: doc.updatedAt?.toISOString() ?? null,
     published_at: doc.publishedAt?.toISOString() ?? null,
+    publish_at: doc.publishAt?.toISOString() ?? null,
   };
   if (includeMarkdown) out.markdown = doc.markdown;
   return out;
@@ -137,6 +138,14 @@ postsRouter.put('/:id', async (req, res, next) => {
     if (!doc) return res.status(404).json({ error: 'post not found' });
 
     const b = req.body ?? {};
+
+    // optimistic concurrency: if the client tells us which version it edited and
+    // the post has moved on since (another tab/device saved), reject instead of
+    // silently clobbering. Only enforced when baseUpdatedAt is supplied.
+    if (typeof b.baseUpdatedAt === 'string' && doc.updatedAt && b.baseUpdatedAt !== doc.updatedAt.toISOString()) {
+      return res.status(409).json({ error: 'this post was changed elsewhere — reload to get the latest', current: serialize(doc) });
+    }
+
     const patch = {
       title: String(b.title ?? doc.title).slice(0, 200),
       description: String(b.description ?? doc.description).slice(0, 500),

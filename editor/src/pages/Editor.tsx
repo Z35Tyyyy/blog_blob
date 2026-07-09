@@ -5,8 +5,7 @@ import { markdown as mdLang } from '@codemirror/lang-markdown';
 import { EditorView, keymap } from '@codemirror/view';
 import { Prec } from '@codemirror/state';
 import { oneDark } from '@codemirror/theme-one-dark';
-import { marked } from 'marked';
-import DOMPurify from 'dompurify';
+import { renderMarkdown } from '../lib/markdown';
 import { api } from '../api';
 import type { Post, PublishResult, Revision, RevisionSummary } from '../types';
 
@@ -34,6 +33,8 @@ export default function Editor({ demo }: { demo: boolean }) {
   const [showHistory, setShowHistory] = useState(false);
   const [revisions, setRevisions] = useState<RevisionSummary[] | null>(null);
   const [revPreview, setRevPreview] = useState<Revision | null>(null);
+  const [conflict, setConflict] = useState(false);
+  const [scheduleAt, setScheduleAt] = useState('');
 
   const cmRef = useRef<ReactCodeMirrorRef>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -75,24 +76,34 @@ export default function Editor({ demo }: { demo: boolean }) {
 
   const save = useCallback(async () => {
     const p = postRef.current;
-    if (!p || demo) return null;
+    if (!p || demo || conflict) return null; // don't overwrite a version we know is stale
     const generation = dirtyRef.current;
     setSaveState('saving');
     try {
-      const updated = await api.updatePost(p.id, {
-        title: p.title,
-        // a transiently invalid slug (mid-typing) must not block saving the rest
-        ...(SLUG_RE.test(p.slug) ? { slug: p.slug } : {}),
-        ...(p.date ? { date: p.date } : {}),
-        description: p.description,
-        tags: p.tags,
-        cover: p.cover,
-        markdown: p.markdown,
-      });
-      // adopt the server-normalized slug only if the user hasn't retyped it since
+      const updated = await api.updatePost(
+        p.id,
+        {
+          title: p.title,
+          // a transiently invalid slug (mid-typing) must not block saving the rest
+          ...(SLUG_RE.test(p.slug) ? { slug: p.slug } : {}),
+          ...(p.date ? { date: p.date } : {}),
+          description: p.description,
+          tags: p.tags,
+          cover: p.cover,
+          markdown: p.markdown,
+        },
+        p.updated_at
+      );
+      // adopt the server-normalized slug only if the user hasn't retyped it since,
+      // and always adopt the fresh updated_at so the next save's base is current
       setPost((cur) =>
         cur
-          ? { ...cur, status: updated.status, ...(cur.slug === p.slug ? { slug: updated.slug } : {}) }
+          ? {
+              ...cur,
+              status: updated.status,
+              updated_at: updated.updated_at,
+              ...(cur.slug === p.slug ? { slug: updated.slug } : {}),
+            }
           : cur
       );
       // edits made while the request was in flight keep the doc dirty
@@ -101,11 +112,25 @@ export default function Editor({ demo }: { demo: boolean }) {
       setError('');
       return updated;
     } catch (e) {
+      const status = (e as Error & { status?: number }).status;
+      if (status === 409) setConflict(true);
       setSaveState('error');
       setError((e as Error).message);
       return null;
     }
-  }, [demo]);
+  }, [demo, conflict]);
+
+  const reloadPost = async () => {
+    try {
+      const fresh = await api.getPost(id!);
+      setPost(fresh);
+      setConflict(false);
+      setSaveState('saved');
+      setError('');
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
 
   // autosave (debounced)
   useEffect(() => {
@@ -280,14 +305,7 @@ export default function Editor({ demo }: { demo: boolean }) {
     [pasteExtension, shortcuts]
   );
 
-  const previewHtml = useMemo(() => {
-    if (!post) return '';
-    // same hardened config as the portfolio's renderer, so preview == production
-    return DOMPurify.sanitize(marked.parse(post.markdown, { async: false }) as string, {
-      FORBID_TAGS: ['style', 'form', 'input', 'button', 'select', 'textarea'],
-      FORBID_ATTR: ['id', 'name'],
-    });
-  }, [post]);
+  const previewHtml = useMemo(() => (post ? renderMarkdown(post.markdown) : ''), [post]);
 
   const words = useMemo(
     () => (post ? post.markdown.split(/\s+/).filter(Boolean).length : 0),
@@ -303,9 +321,13 @@ export default function Editor({ demo }: { demo: boolean }) {
     try {
       const saved = await save();
       if (!saved) return;
-      const result = await api.publish(post.id);
+      const publishAt = scheduleAt ? new Date(scheduleAt).toISOString() : null;
+      const result = await api.publish(post.id, publishAt);
       setPublishResult(result);
-      setPost((p) => (p ? { ...p, status: 'published' } : p));
+      // reflect the scheduled/published state locally; publishAt only "sticks"
+      // server-side when it's in the future
+      const future = !!publishAt && new Date(publishAt).getTime() > Date.now();
+      setPost((p) => (p ? { ...p, status: 'published', publish_at: future ? publishAt : null } : p));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -320,7 +342,8 @@ export default function Editor({ demo }: { demo: boolean }) {
     setError('');
     try {
       await api.unpublish(post.id);
-      setPost((p) => (p ? { ...p, status: 'draft' } : p));
+      setPost((p) => (p ? { ...p, status: 'draft', publish_at: null } : p));
+      setScheduleAt('');
       setPublishResult(null);
     } catch (e) {
       setError((e as Error).message);
@@ -357,12 +380,17 @@ export default function Editor({ demo }: { demo: boolean }) {
     ['—', 'divider', () => insertBlock('---')],
   ];
 
+  const scheduled =
+    post.status === 'published' && !!post.publish_at && new Date(post.publish_at).getTime() > Date.now();
+
   return (
     <main className={`editor-page${zen ? ' zen' : ''}`}>
       <div className="editor-meta">
         <div className="meta-row">
           <Link to="/" className="muted back-link">← posts</Link>
-          <span className={`pill pill-${post.status}`}>{post.status}</span>
+          <span className={`pill pill-${scheduled ? 'scheduled' : post.status}`}>
+            {scheduled ? 'scheduled' : post.status}
+          </span>
           <span className="muted save-indicator">
             {saveState === 'saved' && lastSaved && `saved · ${lastSaved}`}
             {saveState === 'saved' && !lastSaved && 'saved'}
@@ -372,13 +400,22 @@ export default function Editor({ demo }: { demo: boolean }) {
           </span>
           {!demo && (
             <div className="meta-actions">
+              {post.status !== 'published' && (
+                <input
+                  type="datetime-local"
+                  className="schedule-input"
+                  value={scheduleAt}
+                  onChange={(e) => setScheduleAt(e.target.value)}
+                  title="optional: schedule when this goes live"
+                />
+              )}
               {post.status === 'published' && (
                 <button className="ghost" onClick={doUnpublish} disabled={busy}>
                   unpublish
                 </button>
               )}
               <button onClick={doPublish} disabled={busy}>
-                {busy ? '…' : post.status === 'published' ? 'republish' : 'publish'}
+                {busy ? '…' : post.status === 'published' ? 'republish' : scheduleAt ? 'schedule' : 'publish'}
               </button>
             </div>
           )}
@@ -459,7 +496,14 @@ export default function Editor({ demo }: { demo: boolean }) {
         </details>
       </div>
 
-      {error && <p className="error">{error}</p>}
+      {conflict && (
+        <div className="publish-banner conflict-banner">
+          ⚠ this post was changed in another tab or device. reloading fetches the latest —
+          any edits you made here since will be lost.
+          <button onClick={reloadPost}>reload latest</button>
+        </div>
+      )}
+      {error && !conflict && <p className="error">{error}</p>}
 
       {publishResult && (
         <div className="publish-banner">
@@ -580,7 +624,8 @@ export default function Editor({ demo }: { demo: boolean }) {
 
       <div className="editor-status muted">
         {words} words · ~{Math.max(1, Math.ceil(words / 220))} min read
-        {post.status === 'published' && (
+        {scheduled && <> · scheduled for {new Date(post.publish_at!).toLocaleString()}</>}
+        {post.status === 'published' && !scheduled && (
           <> · live at <code>#blog/{post.slug}</code></>
         )}
       </div>

@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { timingSafeEqual } from 'node:crypto';
-import { db } from './db.js';
+import { db, getSetting } from './db.js';
 import { readUploadBase64 } from './uploads.js';
+import { buildFeeds } from './feeds.js';
 
 export const exportRouter = Router();
 
@@ -35,7 +36,13 @@ exportRouter.get('/content', async (req, res, next) => {
     const rows = await db
       .collection('posts')
       .find(
-        { status: 'published', publishedJson: { $ne: null } },
+        {
+          status: 'published',
+          publishedJson: { $ne: null },
+          // scheduled posts (publishAt in the future) stay out of the manifest
+          // until their time; a later sync tick includes them.
+          $or: [{ publishAt: null }, { publishAt: { $exists: false } }, { publishAt: { $lte: new Date() } }],
+        },
         { projection: { slug: 1, publishedJson: 1, publishedMarkdown: 1, publishedImages: 1 } }
       )
       .toArray();
@@ -47,6 +54,18 @@ exportRouter.get('/content', async (req, res, next) => {
     const files = [
       { path: 'content/posts.json', content: JSON.stringify(entries, null, 2) + '\n' },
     ];
+
+    // RSS + sitemap — only when a public site URL is configured (both need an
+    // absolute base). Added to the same manifest, so the sync workflow writes
+    // them into content/ alongside posts.json.
+    const [siteUrl, author] = await Promise.all([
+      getSetting('site_url', ''),
+      getSetting('author_name', 'Kanishk Singh'),
+    ]);
+    if (siteUrl && entries.length) {
+      files.push(...buildFeeds(entries, { siteUrl, author }));
+    }
+
     for (const r of rows) {
       if (typeof r.publishedMarkdown !== 'string') {
         // pre-snapshot post (published by the old direct-commit flow):

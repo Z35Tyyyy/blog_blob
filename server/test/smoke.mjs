@@ -53,6 +53,7 @@ const child = spawn(process.execPath, ['src/index.js'], {
     PORT: String(PORT),
     ALLOWED_ORIGINS: ALLOWED_ORIGIN,
     EXPORT_KEY: 'test-export-key',
+    LOGIN_RATE_LIMIT_MAX: '5', // keep the 429 path deterministic below
     NODE_ENV: 'test',
   },
   stdio: ['ignore', 'pipe', 'inherit'],
@@ -156,6 +157,20 @@ try {
     check('non-object b64 body → 400', r.status === 400);
   }
 
+  // --- optimistic concurrency (edit conflict) ---
+  {
+    const cur = await call(`/api/posts/${id}`);
+    const base = cur.body.updated_at;
+    r = await call(`/api/posts/${id}`, { method: 'PUT', json: { markdown: 'conflict v1', baseUpdatedAt: base } });
+    check('save with the current base version accepted', r.status === 200);
+    // the same base is now stale (updated_at moved), so replaying it is rejected
+    r = await call(`/api/posts/${id}`, { method: 'PUT', json: { markdown: 'conflict v2', baseUpdatedAt: base } });
+    check('stale base version rejected with 409', r.status === 409);
+    // no base version → check skipped (back-compat)
+    r = await call(`/api/posts/${id}`, { method: 'PUT', json: { markdown: 'no base check' } });
+    check('save without a base version still works', r.status === 200);
+  }
+
   // --- uploads (GridFS) ---
   const png = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
@@ -179,6 +194,12 @@ try {
   form.append('image', new Blob(['not an image'], { type: 'text/plain' }), 'evil.txt');
   r = await call('/api/uploads', { method: 'POST', form });
   check('non-image upload → 400', r.status === 400);
+
+  // bytes must actually be an image, not just a claimed image/* content-type
+  form = new FormData();
+  form.append('image', new Blob(['<html>not really a png</html>'], { type: 'image/png' }), 'fake.png');
+  r = await call('/api/uploads', { method: 'POST', form });
+  check('image/png with non-image bytes → 400', r.status === 400);
 
   // --- publish (queued, snapshot-based) + export ---
   r = await call(`/api/posts/${id}`, {
@@ -239,7 +260,50 @@ try {
 
   // --- settings ---
   r = await call('/api/settings');
-  check('settings defaults', r.body?.owner === 'Z35Tyyyy' && r.body?.authorName === 'Kanishk Singh');
+  check(
+    'settings defaults',
+    r.body?.owner === 'Z35Tyyyy' && r.body?.authorName === 'Kanishk Singh' && r.body?.siteUrl === ''
+  );
+
+  const exportManifest = async () => {
+    const good = await fetch(`${BASE}/api/export/content`, {
+      headers: { authorization: 'Bearer test-export-key' },
+    });
+    return good.json();
+  };
+  const hasPath = (m, p) => m.files.some((f) => f.path === p);
+
+  // --- scheduled publishing: a future publishAt withholds from the manifest ---
+  {
+    r = await call(`/api/posts/${id}/publish`, { method: 'POST', json: { publishAt: '2999-01-01T00:00:00Z' } });
+    check('scheduled publish accepted', r.status === 200);
+    r = await call(`/api/posts/${id}`);
+    check('scheduled post carries publish_at', typeof r.body?.publish_at === 'string');
+    let m = await exportManifest();
+    check('scheduled post withheld from manifest', !hasPath(m, 'content/posts/my-test-post.md'));
+    // immediate re-publish (no future publishAt) → it appears
+    r = await call(`/api/posts/${id}/publish`, { method: 'POST', json: { publishAt: null } });
+    check('immediate re-publish accepted', r.status === 200);
+    m = await exportManifest();
+    check('immediate post appears in manifest', hasPath(m, 'content/posts/my-test-post.md'));
+  }
+
+  // --- RSS feed + sitemap (needs a site URL; id is published from above) ---
+  {
+    await call('/api/settings', { method: 'PUT', json: { siteUrl: 'https://blog.example' } });
+    const m = await exportManifest();
+    check('manifest gains feed.xml + sitemap.xml', hasPath(m, 'content/feed.xml') && hasPath(m, 'content/sitemap.xml'));
+    const feed = m.files.find((f) => f.path === 'content/feed.xml')?.content ?? '';
+    check(
+      'feed.xml is RSS listing the post',
+      feed.includes('<rss') && feed.includes('my-test-post') && feed.includes('blog.example')
+    );
+    const sm = m.files.find((f) => f.path === 'content/sitemap.xml')?.content ?? '';
+    check('sitemap.xml lists the post', sm.includes('<urlset') && sm.includes('my-test-post'));
+  }
+
+  // back to a draft so the delete-draft step below still applies
+  await call(`/api/posts/${id}/unpublish`, { method: 'POST' });
 
   // --- delete + logout ---
   r = await call(`/api/posts/${id}`, { method: 'DELETE' });
@@ -248,6 +312,38 @@ try {
   check('revisions of a deleted post → 404', r.status === 404);
   r = await call(`/api/posts/${allowedId}`, { method: 'DELETE' });
   check('delete second draft', r.body?.ok === true);
+
+  // --- change password ---
+  {
+    r = await call('/api/change-password', { method: 'POST', json: { currentPassword: 'nope', newPassword: 'brandnewpass1' } });
+    check('change-password rejects a wrong current password', r.status === 403);
+    r = await call('/api/change-password', { method: 'POST', json: { currentPassword: 'longenough1', newPassword: 'short' } });
+    check('change-password rejects a weak new password', r.status === 400);
+    const beforeChange = cookie; // admin session prior to the change
+    r = await call('/api/change-password', { method: 'POST', json: { currentPassword: 'longenough1', newPassword: 'brandnewpass1' } });
+    check('change-password succeeds', r.status === 200 && r.body?.ok === true);
+    const oldLogin = await fetch(`${BASE}/api/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'longenough1' }),
+    });
+    check('old password no longer logs in', oldLogin.status === 401);
+    const stale = await fetch(`${BASE}/api/posts`, { headers: { cookie: beforeChange } });
+    check('other sessions revoked on password change', stale.status === 401);
+    r = await call('/api/status');
+    check('current device kept after password change', r.body?.authenticated === true);
+  }
+
+  // --- session revocation (log out everywhere) ---
+  {
+    const preRevoke = cookie; // current admin session token
+    r = await call('/api/logout-all', { method: 'POST' });
+    check('logout-all succeeds', r.status === 200 && r.body?.ok === true);
+    r = await call('/api/status'); // helper now holds the freshly re-issued cookie
+    check('current device stays signed in after logout-all', r.body?.authenticated === true);
+    const stale = await fetch(`${BASE}/api/posts`, { headers: { cookie: preRevoke } });
+    check('pre-revoke session token is invalidated', stale.status === 401);
+  }
 
   await call('/api/logout', { method: 'POST' });
   r = await call('/api/posts');
@@ -281,6 +377,9 @@ try {
 
   r = await call('/api/settings', { method: 'PUT', json: { authorName: 'hax' } });
   check('demo cannot change settings', r.status === 403);
+
+  r = await call('/api/change-password', { method: 'POST', json: { currentPassword: 'browse-only', newPassword: 'hacked-pass1' } });
+  check('demo cannot change password', r.status === 403);
 
   {
     const form2 = new FormData();
@@ -335,6 +434,73 @@ try {
       { env: { ...process.env, MONGODB_URI: uri, MONGODB_DB: 'blog_blob_test_fresh' } }
     );
     check('demo script refuses to run before first-run setup', made.status === 1);
+  }
+
+  // --- setup-token gating (fresh server + DB with SETUP_TOKEN set) ---
+  {
+    const P2 = 4112;
+    const B2 = `http://127.0.0.1:${P2}`;
+    const TOKEN = 's3cr3t-setup-token';
+    const child2 = spawn(process.execPath, ['src/index.js'], {
+      env: {
+        ...process.env,
+        MONGODB_URI: uri,
+        MONGODB_DB: 'blog_blob_setuptoken',
+        PORT: String(P2),
+        ALLOWED_ORIGINS: ALLOWED_ORIGIN,
+        EXPORT_KEY: 'test-export-key',
+        SETUP_TOKEN: TOKEN,
+        NODE_ENV: 'test',
+      },
+      stdio: ['ignore', 'pipe', 'inherit'],
+    });
+    child2.stdout.on('data', () => {});
+    const post = (body) =>
+      fetch(`${B2}/api/setup`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    try {
+      let up2 = false;
+      for (let i = 0; i < 50 && !up2; i++) {
+        try {
+          const rr = await fetch(`${B2}/api/status`);
+          up2 = rr.ok;
+        } catch {
+          await new Promise((r) => setTimeout(r, 200));
+        }
+      }
+      check('setup-token server starts', up2);
+
+      const st = await (await fetch(`${B2}/api/status`)).json();
+      check('status advertises setupTokenRequired', st.setupNeeded === true && st.setupTokenRequired === true);
+
+      let rr = await post({ username: 'admin', password: 'longenough1' });
+      check('setup without token → 403', rr.status === 403);
+      rr = await post({ username: 'admin', password: 'longenough1', setupToken: 'wrong' });
+      check('setup with wrong token → 403', rr.status === 403);
+      rr = await post({ username: 'admin', password: 'longenough1', setupToken: TOKEN });
+      check('setup with correct token → 200', rr.status === 200);
+    } finally {
+      child2.kill();
+    }
+  }
+
+  // --- login rate limiting (LOGIN_RATE_LIMIT_MAX=5 for this suite) ---
+  // run last: it deliberately trips the limiter for this IP.
+  {
+    const statuses = [];
+    for (let i = 0; i < 7; i++) {
+      const res = await fetch(`${BASE}/api/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ username: 'admin', password: 'definitely-wrong' }),
+      });
+      statuses.push(res.status);
+    }
+    check('bad logins get throttled with 429', statuses.includes(429), `statuses: ${statuses.join(',')}`);
+    check('limiter allows some attempts before blocking', statuses.indexOf(429) >= 1, `statuses: ${statuses.join(',')}`);
   }
 } catch (err) {
   failed++;
