@@ -32,7 +32,9 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     } catch {
       /* not json */
     }
-    throw new Error(message);
+    const err = new Error(message) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
   }
   return res.json() as Promise<T>;
 }
@@ -49,16 +51,31 @@ export const api = {
     request<{ ok: boolean }>('/api/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
   logout: () => request<{ ok: boolean }>('/api/logout', { method: 'POST' }),
   logoutAll: () => request<{ ok: boolean }>('/api/logout-all', { method: 'POST' }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ ok: boolean }>('/api/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
 
   // posts
   listPosts: () => request<PostSummary[]>('/api/posts'),
   createPost: (title: string) =>
     request<Post>('/api/posts', { method: 'POST', body: JSON.stringify({ title }) }),
   getPost: (id: string) => request<Post>(`/api/posts/${id}`),
-  updatePost: (id: string, patch: Partial<Post>) =>
-    request<Post>(`/api/posts/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+  // baseUpdatedAt: the updated_at the client last saw — the server returns 409
+  // if the post changed elsewhere since, so concurrent edits don't silently clobber.
+  updatePost: (id: string, patch: Partial<Post>, baseUpdatedAt?: string | null) =>
+    request<Post>(`/api/posts/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(baseUpdatedAt ? { ...patch, baseUpdatedAt } : patch),
+    }),
   deletePost: (id: string) => request<{ ok: boolean }>(`/api/posts/${id}`, { method: 'DELETE' }),
-  publish: (id: string) => request<PublishResult>(`/api/posts/${id}/publish`, { method: 'POST' }),
+  // publishAt (ISO, future) schedules the post; omit to publish immediately.
+  publish: (id: string, publishAt?: string | null) =>
+    request<PublishResult>(`/api/posts/${id}/publish`, {
+      method: 'POST',
+      body: JSON.stringify({ publishAt: publishAt ?? null }),
+    }),
   unpublish: (id: string) => request<{ ok: boolean }>(`/api/posts/${id}/unpublish`, { method: 'POST' }),
 
   // revisions

@@ -7,6 +7,10 @@ export default function Settings({ demo }: { demo: boolean }) {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [pwMessage, setPwMessage] = useState('');
+  const [pwError, setPwError] = useState('');
 
   const load = () => {
     api.getSettings().then(setSettings).catch((e) => setError(e.message));
@@ -31,6 +35,7 @@ export default function Settings({ demo }: { demo: boolean }) {
         repo: settings.repo,
         branch: settings.branch,
         authorName: settings.authorName,
+        siteUrl: settings.siteUrl,
       });
       setMessage('saved.');
       load();
@@ -52,6 +57,24 @@ export default function Settings({ demo }: { demo: boolean }) {
       setMessage('signed out of all other sessions.');
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const changePassword = async (e: FormEvent) => {
+    e.preventDefault();
+    if (demo) return;
+    setPwMessage('');
+    setPwError('');
+    setBusy(true);
+    try {
+      await api.changePassword(currentPassword, newPassword);
+      setPwMessage('password changed — other sessions were signed out.');
+      setCurrentPassword('');
+      setNewPassword('');
+    } catch (err) {
+      setPwError((err as Error).message);
     } finally {
       setBusy(false);
     }
@@ -83,6 +106,14 @@ export default function Settings({ demo }: { demo: boolean }) {
               onChange={(e) => patch({ authorName: e.target.value })}
             />
           </label>
+          <label>
+            site url
+            <input
+              value={settings.siteUrl}
+              placeholder="https://your-blog.example — enables RSS + sitemap"
+              onChange={(e) => patch({ siteUrl: e.target.value })}
+            />
+          </label>
         </div>
         <p className="muted">
           publishing needs no credentials here: posts are snapshotted in the database and the{' '}
@@ -106,6 +137,36 @@ export default function Settings({ demo }: { demo: boolean }) {
       </form>
       <section className="stack settings-form">
         <h3>security</h3>
+        <form onSubmit={changePassword} className="stack">
+          <label>
+            current password
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              autoComplete="current-password"
+              disabled={demo}
+            />
+          </label>
+          <label>
+            new password
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              autoComplete="new-password"
+              minLength={8}
+              disabled={demo}
+            />
+          </label>
+          {pwError && <p className="error">{pwError}</p>}
+          {pwMessage && <p className="success">{pwMessage}</p>}
+          <div className="row">
+            <button type="submit" disabled={busy || demo || !currentPassword || !newPassword}>
+              change password
+            </button>
+          </div>
+        </form>
         <p className="muted">
           Signed in on a shared or lost device? Revoke every other session; you stay logged in here.
         </p>

@@ -10,6 +10,7 @@ export interface PostSummary {
   created_at: string;
   updated_at: string;
   published_at: string | null;
+  publish_at: string | null;
 }
 
 export interface Post extends PostSummary {
@@ -40,6 +41,7 @@ export interface Settings {
   repo: string;
   branch: string;
   authorName: string;
+  siteUrl: string;
 }
 
 export interface PublishResult {

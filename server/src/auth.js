@@ -191,3 +191,26 @@ authRouter.post('/logout-all', requireAuth, async (req, res, next) => {
     next(err);
   }
 });
+
+authRouter.post('/change-password', requireAuth, async (req, res, next) => {
+  try {
+    if (req.user.role === 'demo') return res.status(403).json({ error: 'demo account is read-only' });
+    const { currentPassword, newPassword } = req.body ?? {};
+    if (typeof newPassword !== 'string' || newPassword.length < 8) {
+      return res.status(400).json({ error: 'new password must be at least 8 characters' });
+    }
+    const user = await db.collection('users').findOne({ _id: req.user.user_id });
+    const ok = user && (await bcrypt.compare(String(currentPassword ?? ''), user.passwordHash));
+    if (!ok) return res.status(403).json({ error: 'current password is incorrect' });
+
+    await db
+      .collection('users')
+      .updateOne({ _id: user._id }, { $set: { passwordHash: await bcrypt.hash(newPassword, BCRYPT_COST) } });
+    // rotate sessions: kill every session (incl. any leaked one), keep this device
+    await db.collection('sessions').deleteMany({ userId: user._id });
+    await issueSession(req, res, user._id);
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});

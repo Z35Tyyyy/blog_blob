@@ -331,6 +331,26 @@ label {
   color: var(--text-alt);
 }
 
+.pill-scheduled {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.schedule-input {
+  font-family: var(--font);
+  font-size: 0.8rem;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--divider);
+  border-radius: 4px;
+  padding: 0.1rem 0.6ch;
+}
+
+.conflict-banner {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* ---- editor ---- */
 .editor-page {
   display: flex;
@@ -515,6 +535,52 @@ label {
   background: none;
   border: none;
   padding: 0;
+}
+
+/* highlight.js token colors, themed from the palette (no external hljs theme) */
+.preview-body .hljs {
+  color: var(--text);
+}
+.preview-body .hljs-comment,
+.preview-body .hljs-quote {
+  color: var(--text-alt);
+  font-style: italic;
+}
+.preview-body .hljs-keyword,
+.preview-body .hljs-selector-tag,
+.preview-body .hljs-built_in,
+.preview-body .hljs-name,
+.preview-body .hljs-tag {
+  color: var(--accent);
+}
+.preview-body .hljs-string,
+.preview-body .hljs-title,
+.preview-body .hljs-section,
+.preview-body .hljs-attribute,
+.preview-body .hljs-literal,
+.preview-body .hljs-type,
+.preview-body .hljs-addition {
+  color: var(--ok);
+}
+.preview-body .hljs-number,
+.preview-body .hljs-symbol,
+.preview-body .hljs-bullet,
+.preview-body .hljs-link,
+.preview-body .hljs-meta,
+.preview-body .hljs-selector-id,
+.preview-body .hljs-selector-class {
+  color: #6cb6ff;
+}
+.preview-body .hljs-attr,
+.preview-body .hljs-variable,
+.preview-body .hljs-deletion {
+  color: var(--text-alt);
+}
+.preview-body .hljs-emphasis {
+  font-style: italic;
+}
+.preview-body .hljs-strong {
+  font-weight: bold;
 }
 
 .preview-body blockquote {

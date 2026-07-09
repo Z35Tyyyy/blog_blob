@@ -39,6 +39,18 @@ publishRouter.post('/:id/publish', async (req, res, next) => {
     if (!post.title.trim()) return res.status(400).json({ error: 'give the post a title first' });
     if (!post.markdown.trim()) return res.status(400).json({ error: 'the post has no content' });
 
+    // optional scheduling: a future publishAt withholds the post from the export
+    // manifest until then (the 30-min content sync picks it up); a past or
+    // absent value publishes immediately.
+    let publishAt = null;
+    if (req.body?.publishAt) {
+      const when = new Date(req.body.publishAt);
+      if (Number.isNaN(when.getTime())) {
+        return res.status(400).json({ error: 'publishAt must be a valid date' });
+      }
+      if (when.getTime() > Date.now()) publishAt = when;
+    }
+
     const date = /^\d{4}-\d{2}-\d{2}$/.test(post.date) ? post.date : localDate();
 
     // 1. rewrite draft-local image URLs to their published locations
@@ -91,6 +103,7 @@ publishRouter.post('/:id/publish', async (req, res, next) => {
         $set: {
           status: 'published',
           date,
+          publishAt,
           publishedAt: new Date(),
           updatedAt: new Date(),
           publishedJson: JSON.stringify(entry),
@@ -120,6 +133,7 @@ publishRouter.post('/:id/unpublish', async (req, res, next) => {
       {
         $set: {
           status: 'draft',
+          publishAt: null,
           publishedAt: null,
           publishedJson: null,
           publishedMarkdown: null,
