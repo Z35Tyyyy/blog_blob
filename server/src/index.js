@@ -10,13 +10,17 @@ import { uploadsRouter, serveUpload } from './uploads.js';
 import { publishRouter } from './publish.js';
 import { settingsRouter } from './settings.js';
 import { exportRouter } from './export.js';
+import { securityHeaders } from './security.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
 // respect X-Forwarded-Proto when TLS terminates at a reverse proxy (req.secure)
 app.set('trust proxy', 1);
+app.disable('x-powered-by');
 
+// CSP, HSTS, nosniff, frame-deny, referrer-policy on every response
+app.use(securityHeaders);
 app.use(cookieParser());
 app.use(express.json({ limit: '2mb' }));
 

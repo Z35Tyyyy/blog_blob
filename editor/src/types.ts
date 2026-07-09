@@ -29,6 +29,7 @@ export interface Revision extends RevisionSummary {
 
 export interface AuthStatus {
   setupNeeded: boolean;
+  setupTokenRequired: boolean;
   authenticated: boolean;
   username: string | null;
   demo: boolean;

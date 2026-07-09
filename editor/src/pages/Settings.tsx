@@ -41,6 +41,22 @@ export default function Settings({ demo }: { demo: boolean }) {
     }
   };
 
+  const logoutEverywhere = async () => {
+    if (demo) return;
+    if (!confirm('Sign out every other session? Other browsers/devices will need to log in again.')) return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await api.logoutAll();
+      setMessage('signed out of all other sessions.');
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <main className="page">
       <h2>
@@ -88,6 +104,17 @@ export default function Settings({ demo }: { demo: boolean }) {
           </button>
         </div>
       </form>
+      <section className="stack settings-form">
+        <h3>security</h3>
+        <p className="muted">
+          Signed in on a shared or lost device? Revoke every other session; you stay logged in here.
+        </p>
+        <div className="row">
+          <button type="button" onClick={logoutEverywhere} disabled={busy || demo}>
+            log out all other sessions
+          </button>
+        </div>
+      </section>
     </main>
   );
 }

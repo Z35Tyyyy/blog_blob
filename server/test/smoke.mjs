@@ -53,6 +53,7 @@ const child = spawn(process.execPath, ['src/index.js'], {
     PORT: String(PORT),
     ALLOWED_ORIGINS: ALLOWED_ORIGIN,
     EXPORT_KEY: 'test-export-key',
+    LOGIN_RATE_LIMIT_MAX: '5', // keep the 429 path deterministic below
     NODE_ENV: 'test',
   },
   stdio: ['ignore', 'pipe', 'inherit'],
@@ -180,6 +181,12 @@ try {
   r = await call('/api/uploads', { method: 'POST', form });
   check('non-image upload → 400', r.status === 400);
 
+  // bytes must actually be an image, not just a claimed image/* content-type
+  form = new FormData();
+  form.append('image', new Blob(['<html>not really a png</html>'], { type: 'image/png' }), 'fake.png');
+  r = await call('/api/uploads', { method: 'POST', form });
+  check('image/png with non-image bytes → 400', r.status === 400);
+
   // --- publish (queued, snapshot-based) + export ---
   r = await call(`/api/posts/${id}`, {
     method: 'PUT',
@@ -248,6 +255,17 @@ try {
   check('revisions of a deleted post → 404', r.status === 404);
   r = await call(`/api/posts/${allowedId}`, { method: 'DELETE' });
   check('delete second draft', r.body?.ok === true);
+
+  // --- session revocation (log out everywhere) ---
+  {
+    const preRevoke = cookie; // current admin session token
+    r = await call('/api/logout-all', { method: 'POST' });
+    check('logout-all succeeds', r.status === 200 && r.body?.ok === true);
+    r = await call('/api/status'); // helper now holds the freshly re-issued cookie
+    check('current device stays signed in after logout-all', r.body?.authenticated === true);
+    const stale = await fetch(`${BASE}/api/posts`, { headers: { cookie: preRevoke } });
+    check('pre-revoke session token is invalidated', stale.status === 401);
+  }
 
   await call('/api/logout', { method: 'POST' });
   r = await call('/api/posts');
@@ -335,6 +353,73 @@ try {
       { env: { ...process.env, MONGODB_URI: uri, MONGODB_DB: 'blog_blob_test_fresh' } }
     );
     check('demo script refuses to run before first-run setup', made.status === 1);
+  }
+
+  // --- setup-token gating (fresh server + DB with SETUP_TOKEN set) ---
+  {
+    const P2 = 4112;
+    const B2 = `http://127.0.0.1:${P2}`;
+    const TOKEN = 's3cr3t-setup-token';
+    const child2 = spawn(process.execPath, ['src/index.js'], {
+      env: {
+        ...process.env,
+        MONGODB_URI: uri,
+        MONGODB_DB: 'blog_blob_setuptoken',
+        PORT: String(P2),
+        ALLOWED_ORIGINS: ALLOWED_ORIGIN,
+        EXPORT_KEY: 'test-export-key',
+        SETUP_TOKEN: TOKEN,
+        NODE_ENV: 'test',
+      },
+      stdio: ['ignore', 'pipe', 'inherit'],
+    });
+    child2.stdout.on('data', () => {});
+    const post = (body) =>
+      fetch(`${B2}/api/setup`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    try {
+      let up2 = false;
+      for (let i = 0; i < 50 && !up2; i++) {
+        try {
+          const rr = await fetch(`${B2}/api/status`);
+          up2 = rr.ok;
+        } catch {
+          await new Promise((r) => setTimeout(r, 200));
+        }
+      }
+      check('setup-token server starts', up2);
+
+      const st = await (await fetch(`${B2}/api/status`)).json();
+      check('status advertises setupTokenRequired', st.setupNeeded === true && st.setupTokenRequired === true);
+
+      let rr = await post({ username: 'admin', password: 'longenough1' });
+      check('setup without token → 403', rr.status === 403);
+      rr = await post({ username: 'admin', password: 'longenough1', setupToken: 'wrong' });
+      check('setup with wrong token → 403', rr.status === 403);
+      rr = await post({ username: 'admin', password: 'longenough1', setupToken: TOKEN });
+      check('setup with correct token → 200', rr.status === 200);
+    } finally {
+      child2.kill();
+    }
+  }
+
+  // --- login rate limiting (LOGIN_RATE_LIMIT_MAX=5 for this suite) ---
+  // run last: it deliberately trips the limiter for this IP.
+  {
+    const statuses = [];
+    for (let i = 0; i < 7; i++) {
+      const res = await fetch(`${BASE}/api/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ username: 'admin', password: 'definitely-wrong' }),
+      });
+      statuses.push(res.status);
+    }
+    check('bad logins get throttled with 429', statuses.includes(429), `statuses: ${statuses.join(',')}`);
+    check('throttle only kicks in after the limit', statuses.filter((s) => s === 401).length >= 5);
   }
 } catch (err) {
   failed++;

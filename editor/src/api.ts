@@ -40,11 +40,15 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 export const api = {
   // auth
   status: () => request<AuthStatus>('/api/status'),
-  setup: (username: string, password: string) =>
-    request<{ ok: boolean }>('/api/setup', { method: 'POST', body: JSON.stringify({ username, password }) }),
+  setup: (username: string, password: string, setupToken?: string) =>
+    request<{ ok: boolean }>('/api/setup', {
+      method: 'POST',
+      body: JSON.stringify({ username, password, setupToken }),
+    }),
   login: (username: string, password: string) =>
     request<{ ok: boolean }>('/api/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
   logout: () => request<{ ok: boolean }>('/api/logout', { method: 'POST' }),
+  logoutAll: () => request<{ ok: boolean }>('/api/logout-all', { method: 'POST' }),
 
   // posts
   listPosts: () => request<PostSummary[]>('/api/posts'),

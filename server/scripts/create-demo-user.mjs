@@ -45,7 +45,7 @@ await db.collection('users').updateOne(
   { username },
   {
     $setOnInsert: { username, createdAt: new Date() },
-    $set: { passwordHash: await bcrypt.hash(password, 10), role: 'demo' },
+    $set: { passwordHash: await bcrypt.hash(password, 12), role: 'demo' },
   },
   { upsert: true }
 );
