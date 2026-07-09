@@ -15,12 +15,17 @@ type SaveState = 'saved' | 'unsaved' | 'saving' | 'error';
 
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
+// phones: writing space is scarce — start in edit mode and keep the meta
+// fields folded away until asked for
+const NARROW = '(max-width: 860px)';
+
 export default function Editor({ demo }: { demo: boolean }) {
   const { id } = useParams();
 
   const [post, setPost] = useState<Post | null>(null);
   const [error, setError] = useState('');
-  const [mode, setMode] = useState<Mode>('split');
+  const [mode, setMode] = useState<Mode>(() => (window.matchMedia(NARROW).matches ? 'edit' : 'split'));
+  const [metaOpen, setMetaOpen] = useState(() => !window.matchMedia(NARROW).matches);
   const [saveState, setSaveState] = useState<SaveState>('saved');
   const [lastSaved, setLastSaved] = useState('');
   const [busy, setBusy] = useState(false);
@@ -386,7 +391,13 @@ export default function Editor({ demo }: { demo: boolean }) {
           onChange={(e) => patch({ title: e.target.value })}
         />
 
-        <div className="meta-grid">
+        <details
+          className="meta-details"
+          open={metaOpen}
+          onToggle={(e) => setMetaOpen((e.target as HTMLDetailsElement).open)}
+        >
+          <summary>post details</summary>
+          <div className="meta-grid">
           <label>
             <span>
               slug
@@ -444,7 +455,8 @@ export default function Editor({ demo }: { demo: boolean }) {
             </div>
             {post.cover && <img className="cover-thumb" src={post.cover} alt="cover preview" />}
           </label>
-        </div>
+          </div>
+        </details>
       </div>
 
       {error && <p className="error">{error}</p>}
@@ -505,6 +517,9 @@ export default function Editor({ demo }: { demo: boolean }) {
             <span className="muted">
               the previous version is snapshotted when you save — at most one per 5 minutes, last 20 kept
             </span>
+            <button className="ghost history-close" onClick={toggleHistory} title="close checkpoints">
+              ✕
+            </button>
           </div>
           {!revisions && <p className="muted">loading…</p>}
           {revisions && revisions.length === 0 && (
@@ -528,7 +543,7 @@ export default function Editor({ demo }: { demo: boolean }) {
             <div className="history-preview">
               <div className="history-preview-head">
                 <span className="muted">
-                  {new Date(revPreview.created_at).toLocaleString()} · {revPreview.words} words
+                  snapshot · {new Date(revPreview.created_at).toLocaleString()} · {revPreview.words} words
                 </span>
                 <button onClick={restoreRevision} disabled={demo}>restore this version</button>
                 <button className="ghost" onClick={() => setRevPreview(null)}>

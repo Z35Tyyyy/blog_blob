@@ -38,6 +38,9 @@ body {
 
 #root {
   min-height: 100vh;
+  /* contain child margins (the login card's top margin would otherwise
+     collapse through and add pointless scroll below a full-height page) */
+  display: flow-root;
 }
 
 a {
@@ -230,6 +233,7 @@ label {
   color: var(--bg);
   text-align: center;
   padding: 0.5rem 1ch;
+  margin-bottom: 1rem;
   font-size: 0.85rem;
 }
 
@@ -373,6 +377,26 @@ label {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(24ch, 1fr));
   gap: 0.8rem;
+}
+
+/* slug/date/tags/description/cover fold away behind a disclosure — open by
+   default on desktop, collapsed on phones (see NARROW in Editor.tsx) */
+.meta-details summary {
+  cursor: pointer;
+  width: fit-content;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-alt);
+  user-select: none;
+}
+
+.meta-details summary:hover {
+  color: var(--text);
+}
+
+.meta-details[open] summary {
+  margin-bottom: 0.8rem;
 }
 
 .publish-banner {
@@ -564,6 +588,9 @@ label {
 
 .cover-field button {
   padding: 0.2rem 0.9ch;
+  /* never collapse into an unreadable sliver when the column is at minimum */
+  flex: 0 0 auto;
+  min-width: 3.5ch;
 }
 
 .cover-thumb {
@@ -602,6 +629,11 @@ label {
 
 .history-head .muted {
   font-size: 0.75rem;
+}
+
+.history-close {
+  margin-left: auto;
+  padding: 0.05rem 0.6ch;
 }
 
 .history-list {
@@ -654,6 +686,7 @@ label {
   white-space: nowrap;
 }
 
+/* ---- mobile ---- */
 @media (max-width: 860px) {
   .editor-panes.mode-split {
     grid-template-columns: 1fr;
@@ -668,5 +701,155 @@ label {
 
   .shell-wide .pane {
     max-height: 70vh;
+  }
+
+  .shell {
+    padding: 0 1.5ch 3rem;
+  }
+
+  /* topbar must never overflow the viewport: wrap, keep the brand whole; a
+     wrapped nav takes the full row instead of hugging the right edge */
+  .topbar {
+    flex-wrap: wrap;
+    gap: 0.4rem 1.2ch;
+  }
+
+  .brand {
+    white-space: nowrap;
+  }
+
+  .topbar-right {
+    gap: 1.2ch;
+    flex: 1 1 auto;
+    justify-content: flex-end;
+  }
+
+  /* credential/slug chips wrap as whole units, never mid-word */
+  .demo-note code,
+  .demo-bar code,
+  .editor-status code,
+  .publish-banner code {
+    white-space: nowrap;
+  }
+
+  /* below 16px, iOS Safari zooms the whole page when an input gets focus */
+  input,
+  .pane-editor .cm-editor {
+    font-size: 16px;
+  }
+
+  /* toolbar: a single thumb-scrollable row; the view controls (history, zen,
+     edit/split/preview) are ordered first so they stay reachable, and the
+     insert tools scroll off to the right. The right-edge fade signals that
+     there is more to scroll — mobile scrollbars are invisible at rest. */
+  .editor-toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 4ch), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 4ch), transparent);
+    padding-right: 3ch;
+  }
+
+  .editor-toolbar .tool {
+    flex: 0 0 auto;
+  }
+
+  .editor-toolbar .spacer {
+    display: none;
+  }
+
+  .editor-toolbar .spacer ~ .tool {
+    order: -1;
+  }
+
+  /* posts list: title on its own line, slug/tags under it — nothing squeezes */
+  .post-row {
+    flex-wrap: wrap;
+    row-gap: 0.25rem;
+  }
+
+  .post-row-main {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.1rem;
+    /* basis auto (not 0) so a long title pushes pill/date to their own line
+       instead of squeezing into a sliver next to them */
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .post-row-title {
+    overflow-wrap: anywhere;
+  }
+
+  .post-row-slug,
+  .post-row-tags {
+    max-width: 100%;
+  }
+
+  .post-row-side {
+    margin-left: auto;
+  }
+
+  .filter-row {
+    flex-wrap: wrap;
+  }
+
+  .filter-row input {
+    max-width: none;
+    flex: 1 1 100%;
+  }
+
+  .pane-preview {
+    padding: 1rem 1.5ch;
+  }
+
+  /* the page already scrolls — a nested 9rem scroll region inside it is
+     miserable on a phone */
+  .history-list {
+    max-height: none;
+  }
+}
+
+/* phones in portrait: the login card takes the width it can get */
+@media (max-width: 520px) {
+  .center-card {
+    margin: 7vh 2ch 0;
+  }
+}
+
+/* touch: comfortable tap targets */
+@media (pointer: coarse) {
+  button {
+    padding: 0.5rem 1.4ch;
+  }
+
+  .tool {
+    padding: 0.45rem 1.1ch;
+  }
+
+  .post-row {
+    padding: 0.9rem 0.5ch;
+  }
+
+  /* nav links, the meta disclosure, and the demo-bar login link get a real
+     hit area without shifting the layout */
+  .topbar-right a {
+    display: inline-block;
+    padding: 0.5rem 0.6ch;
+    margin: -0.5rem -0.6ch;
+  }
+
+  .meta-details summary {
+    padding: 0.6rem 0.6ch;
+    margin: -0.6rem -0.6ch;
+  }
+
+  .demo-bar .linklike {
+    display: inline-block;
+    padding: 0.4rem 0.4ch;
+    margin: -0.4rem -0.4ch;
   }
 }
