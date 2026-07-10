@@ -468,10 +468,3 @@ Thus I queried the cloudsek-ctf in the s3 bucket and found `flag.txt` under `PRE
 
 ![image.png](https://raw.githubusercontent.com/Z35Tyyyy/blog_blob/main/content/images/cloudsek-hiring-ctf-writeup/176a5619-e2b8-4637-b844-4d9621a77646.png)
 
-
-
-
-```python
-
-```
-
